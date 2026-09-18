@@ -5,8 +5,14 @@
     "steps": []
   },
   {
-    "name": "aabbb",
-    "ingredients": [],
+    "name": "ddddd",
+    "ingredients": [
+      {
+        "name": "dsf",
+        "amount": "1",
+        "unit": "g"
+      }
+    ],
     "steps": []
   }
 ]
