@@ -140,3 +140,35 @@ def delete_recipe(connection, recipe_id):
     )
     
     connection.commit()
+
+# 搜索菜谱
+def search_recipes_by_name(connection, keyword):
+    cursor = connection.cursor()
+    
+    cursor.execute(
+    """
+        SELECT id, name, ingredients, steps
+        FROM recipes
+        WHERE name LIKE ?
+        ORDER BY id
+    """,
+    (f"%{keyword}%",)
+    )
+    
+    # 取得刚才 SQL 查询出的所有结果, 结果通常是“元组组成的列表”
+    rows = cursor.fetchall()
+    
+    # 遍历rows，把每个row转换为菜谱字典，再返回菜谱列表
+    recipes = []
+    for row in rows:
+        recipe = {
+            "id": row[0],
+            "name": row[1],
+            "ingredients": json.loads(row[2]),
+            "steps": json.loads(row[3])
+        }
+        
+        recipes.append(recipe)
+        
+    return recipes
+    

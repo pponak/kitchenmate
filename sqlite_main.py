@@ -4,6 +4,7 @@ from db_storage import (
     add_recipe,
     get_all_recipes,
     get_recipe_by_id,
+    search_recipes_by_name,
     update_recipe_name,
     delete_recipe
 )
@@ -116,7 +117,76 @@ def delete_recipe_interactive(connection):
     
     ## 显示删除结果
     print(f"已删除菜谱：{recipe['id']}. {recipe['name']}")
-        
+
+# 根据菜谱名称，模糊搜索菜谱
+def search_recipes_interactive(connection):
+    ## 获取关键词
+    keyword = input("请输入要搜索的菜谱名称：").strip()
+    
+    if not keyword:
+        print("搜索关键词不能为空。")
+        return
+    
+    ## 调用数据层函数
+    recipes = search_recipes_by_name(connection, keyword)
+    
+    if not recipes:
+        print("没有找到匹配的菜谱。")
+        return
+    
+    ## 显示搜索结果
+    print("搜索结果：")
+    for recipe in recipes:
+        print(f"菜谱ID: {recipe['id']}, 菜谱名称：{recipe['name']}")
+    
+def update_recipe_interactive(connection):
+    ## 查看是否有菜谱，没有菜谱时提示并返回
+    all_recipes = get_all_recipes(connection)
+    
+    if not all_recipes:
+        print("暂无菜谱")
+        return
+    
+    ## 展示当前所有菜谱
+    for recipe in all_recipes:
+        print(f"菜谱ID: {recipe['id']}, 菜谱名称：{recipe['name']}")
+    
+    ## 接受并验证数字ID
+    recipe_id = input("请输入要修改的菜谱ID：").strip()
+    
+    if not recipe_id:
+        print("菜谱ID不能为空。")
+        return
+    try:
+        recipe_id = int(recipe_id)
+    except ValueError:
+        print("请输入数字ID。")
+        return
+    
+    if not recipe_id:
+        print("菜谱ID不能为空。")
+        return
+    
+    ## 使用数据层函数get_recipe_by_id验证ID是否存在
+    recipe = get_recipe_by_id(connection, recipe_id)
+    
+    if recipe is None:
+        print("没有找到这个菜谱ID。")
+        return
+    
+    ## 输入新名称
+    new_name = input("请输入新的菜谱名称：").strip()
+    
+    if not new_name:
+        print("菜谱名称不能为空。")
+        return
+    
+    ## 调用数据层函数update_recipe_name
+    update_recipe_name(connection, recipe_id, new_name)
+    
+    ## 显示修改结果
+    new_recipe = get_recipe_by_id(connection, recipe_id)
+    print(f"菜谱名称已从：{recipe['id']}. {recipe['name']} 修改为：{new_recipe['id']}. {new_recipe['name']}")
 
 def main():
     connection = connect_db()
@@ -145,6 +215,10 @@ def main():
             show_recipes(connection)
         elif choice == 3:
             delete_recipe_interactive(connection)
+        elif choice == 4:
+            search_recipes_interactive(connection)
+        elif choice == 5:
+            update_recipe_interactive(connection)
         elif choice == 0:
             break
         else:
