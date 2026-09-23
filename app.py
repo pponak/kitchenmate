@@ -6,7 +6,8 @@ from db_storage import (
     search_recipes_by_name,
     add_recipe,
     get_recipe_by_id,
-    delete_recipe
+    delete_recipe,
+    update_recipe_name
     )
 
 # 标题
@@ -22,7 +23,8 @@ with st.form("添加菜谱"):
     ingredient_name_text = st.text_input("食材名称")
     ingredient_amount_text = st.text_input("食材数量")
     ingredient_unit_text = st.text_input("食材单位")
-    step_text = st.text_input("步骤")
+    ## 多行步骤，按行分割
+    steps_text = st.text_area("步骤（按行分步骤）")
     submitted = st.form_submit_button("提交")
 ## 如果提交表单，重新运行脚本，submitted的值会变为True，进行添加菜谱操作
 if submitted:
@@ -30,13 +32,18 @@ if submitted:
     ingredient_name = ingredient_name_text.strip()
     ingredient_amount = ingredient_amount_text.strip()
     ingredient_unit = ingredient_unit_text.strip()
-    steps = step_text.strip()
+    ### 多行步骤，按行分割
+    steps = []
+    for line in steps_text.splitlines():
+        cleaned_line = line.strip()
+        if cleaned_line:
+            steps.append(cleaned_line)
     ### 判断输入是否为空，如果为空，提示用户
     if recipe_name and ingredient_name and steps:
         recipe = {
                     "name": recipe_name,
                     "ingredients": [{"name": ingredient_name, "amount": ingredient_amount, "unit": ingredient_unit}],
-                    "steps": [steps]
+                    "steps": steps
                 }
         new_recipe_id = add_recipe(connection, recipe)
         st.write(f"菜谱添加成功，ID为{new_recipe_id}")
@@ -69,6 +76,29 @@ if check_clicked:
                 delete_recipe(connection, delete_id)
                 st.write(f"已删除菜谱：{target_recipe['id']}. {target_recipe['name']}")
 
+# 修改菜谱名称
+update_id_text = st.text_input("要修改的菜谱ID")
+update_newname_text = st.text_input("要修改的菜谱名称")
+update_clicked = st.button("修改菜谱名称")
+## 如果点击修改按钮，检查输入是否为空-》检查ID是否为数字-》检查ID是否存在-》修改菜谱名称-》显示修改结果
+if update_clicked:
+    update_newname = update_newname_text.strip()
+    if not update_newname:
+        st.write("菜谱名称不能为空")
+    elif not update_id_text.strip():
+        st.write("菜谱ID不能为空")
+    else:
+        try:
+            update_id = int(update_id_text.strip())
+        except ValueError:
+            st.write("请输入数字ID")
+        else:
+            target_recipe = get_recipe_by_id(connection, update_id)
+            if target_recipe is None:
+                st.write(f"没有找到ID为{update_id}的菜谱")
+            else:
+                update_recipe_name(connection, update_id, update_newname)
+                st.write(f"已修改菜谱：{target_recipe['id']}. {target_recipe['name']} -> {update_newname}")
 
 # 按名称搜索菜谱
 keyword = st.text_input("搜索菜谱名称").strip()
