@@ -35,6 +35,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe sqlite_main.py
 ```
 
+## 运行测试
+
+在项目虚拟环境中安装 pytest 并运行数据层测试：
+
+```cmd
+.\.venv\Scripts\python.exe -m pip install pytest==9.1.1
+.\.venv\Scripts\python.exe -m pytest -q test_db_storage.py
+```
+
+`test_db_storage.py` 包含添加后重新连接并读回菜谱、删除后重新连接并确认菜谱不存在两条测试。每条测试都通过 pytest 的 `tmp_path` 创建独立的 SQLite 数据库，不会修改本机的 `kitchenmate.db`。
+
 ## 数据与项目文件
 
 一条菜谱包含 `id`、`name`、`ingredients` 和 `steps`。食材是字典列表，步骤是字符串列表；存入 SQLite 时，后两项编码为 JSON 文本，读取时再还原为 Python 列表。
@@ -46,6 +57,7 @@ kitchenmate/
 ├── sqlite_main.py  # SQLite 命令行入口
 ├── kitchenmate.db  # 本机数据，首次运行时创建，不经 Git 同步
 ├── db_practice.py  # 早期 SQLite CRUD 练习
+├── test_db_storage.py  # 使用临时数据库验证添加、读取和删除
 ├── main.py         # 历史 JSON 命令行版本
 ├── storage.py      # 历史 JSON 读写
 ├── recipes.json    # 历史 JSON 示例数据
@@ -59,6 +71,6 @@ kitchenmate/
 
 - 页面添加暂时只支持一个食材和一个步骤；页面尚不能修改菜谱；
 - 页面删除没有二次确认；
-- 尚无自动化测试；当前功能已通过页面手动操作和本地 SQLite 查询验证。
+- 已有两条 SQLite 数据层自动化测试；页面交互仍以手动验收为主。
 
-接下来按实际使用需求逐步补齐页面编辑、多食材与多步骤输入、测试和可靠性检查；分类、收藏等需要新增字段的功能留到数据设计明确后再做。
+接下来按实际使用需求逐步补齐页面编辑、多食材与多步骤输入，以及必要的边界测试和可靠性检查；分类、收藏等需要新增字段的功能留到数据设计明确后再做。
