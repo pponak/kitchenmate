@@ -1,90 +1,64 @@
 # KitchenMate
 
-KitchenMate 是一个用于学习 Python 应用开发的个人菜谱管理命令行程序。
-
-当前项目重点练习：需求拆解、函数设计、JSON 持久化、异常处理、模块划分和 Git 版本管理。
+KitchenMate 是一个个人菜谱管理练习项目。当前主版本使用 SQLite 保存菜谱，并通过 Streamlit 提供网页界面；早期的 JSON 命令行版本保留作学习记录。
 
 ## 当前功能
 
-- 添加菜谱；
-- 查看菜谱名称列表；
-- 删除菜谱；
-- 按菜谱名称关键词搜索；
-- 修改菜谱名称；
-- 使用 JSON 保存和读取菜谱数据；
-- 处理空输入、无效编号和非数字菜单输入。
+### Streamlit 页面（`app.py`）
 
-## 菜单
+- 显示菜谱的数据库 ID 和名称，展开查看食材与步骤；
+- 按名称关键词搜索菜谱，搜索框为空时显示全部；
+- 添加菜谱：输入名称、一个食材和一个步骤；名称、食材名称、步骤不能为空，数量和单位可以留空；
+- 按数据库 ID 删除菜谱，并处理空 ID、非数字 ID 和不存在的 ID。
 
-```text
-1. 添加菜谱
-2. 查看菜谱
-3. 删除菜谱
-4. 搜索菜谱
-5. 修改菜谱名称
-0. 退出
-```
+删除按钮会立即删除找到的菜谱，目前没有二次确认。操作前请核对数据库 ID。
 
-搜索支持按菜谱名称进行不区分大小写的部分匹配。例如，搜索“排骨”可以匹配“糖醋排骨”。搜索结果会显示连续编号和完整菜谱字典。
+### SQLite 命令行（`sqlite_main.py`）
 
-## 项目结构
-
-```text
-kitchenmate/
-├── main.py       # 菜单、用户交互和菜谱业务功能
-├── storage.py    # recipes.json 的读取和保存
-├── recipes.json  # 当前菜谱数据
-├── README.md     # 项目说明
-└── .gitignore    # 忽略本地环境和 Python 缓存
-```
-
-## 菜谱数据结构
-
-当前每个菜谱使用一个字典表示，多个菜谱使用列表保存：
-
-```json
-{
-  "name": "糖醋排骨",
-  "ingredients": [
-    {
-      "name": "排骨",
-      "amount": "500",
-      "unit": "g"
-    }
-  ],
-  "steps": [
-    "排骨焯水",
-    "加热炖煮"
-  ]
-}
-```
+支持添加、查看、按名称搜索、按数据库 ID 删除，以及修改菜谱名称。命令行添加时可以输入多个食材和步骤。`db_storage.py` 为页面和命令行提供同一套 SQLite 数据操作。
 
 ## 运行方式
 
-项目目前只使用 Python 标准库，不需要额外安装第三方依赖。
-
-在项目目录中运行：
+已在 Windows、Python 3.14.3、Streamlit 1.64.0 下运行。进入 `kitchenmate` 项目目录后，在 cmd 中执行：
 
 ```cmd
-.venv\Scripts\activate.bat
-python main.py
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install streamlit==1.64.0
+.\.venv\Scripts\streamlit.exe run app.py
 ```
 
-如果使用 PowerShell，可以运行：
+每台电脑只需创建一次自己的 `.venv`。已有可用的 `.venv` 时，直接运行最后一行；若环境中没有 pip，可先运行 `.\.venv\Scripts\python.exe -m ensurepip --upgrade`。启动后在终端给出的本地地址打开页面，按 `Ctrl+C` 停止。
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python main.py
+运行 SQLite 命令行版本：
+
+```cmd
+.\.venv\Scripts\python.exe sqlite_main.py
 ```
 
-## 当前限制
+## 数据与项目文件
 
-- 修改功能目前只修改菜谱名称，尚未修改食材和步骤；
-- 搜索结果目前直接显示原始菜谱字典，尚未格式化为更适合阅读的详情；
-- 数据暂时保存在 JSON 文件中，尚未迁移到 SQLite；
-- 尚未编写 pytest 自动化测试；
-- 尚未制作图形界面、日志和配置系统。
+一条菜谱包含 `id`、`name`、`ingredients` 和 `steps`。食材是字典列表，步骤是字符串列表；存入 SQLite 时，后两项编码为 JSON 文本，读取时再还原为 Python 列表。
 
-## 下一步计划
+```text
+kitchenmate/
+├── app.py          # 当前 Streamlit 页面
+├── db_storage.py   # SQLite 连接、建表、查询、添加、修改和删除
+├── sqlite_main.py  # SQLite 命令行入口
+├── kitchenmate.db  # 本机数据，首次运行时创建，不经 Git 同步
+├── db_practice.py  # 早期 SQLite CRUD 练习
+├── main.py         # 历史 JSON 命令行版本
+├── storage.py      # 历史 JSON 读写
+├── recipes.json    # 历史 JSON 示例数据
+├── README.md
+└── .gitignore
+```
 
-在 JSON 版本稳定后，学习使用 Python 自带的 `sqlite3`，将菜谱数据迁移到 SQLite 数据库，并练习数据库 CRUD 操作。
+代码通过 Git/GitHub 同步。`kitchenmate.db` 被 `.gitignore` 排除，因此两台电脑的 SQLite 菜谱数据各自独立。`recipes.json` 虽写在 `.gitignore` 中，但已被 Git 跟踪，仍会随代码仓库同步；当前主版本不读取它。
+
+## 当前限制与下一步
+
+- 页面添加暂时只支持一个食材和一个步骤；页面尚不能修改菜谱；
+- 页面删除没有二次确认；
+- 尚无自动化测试；当前功能已通过页面手动操作和本地 SQLite 查询验证。
+
+接下来按实际使用需求逐步补齐页面编辑、多食材与多步骤输入、测试和可靠性检查；分类、收藏等需要新增字段的功能留到数据设计明确后再做。
