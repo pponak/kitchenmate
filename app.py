@@ -17,21 +17,62 @@ st.title("欢迎来到菜谱应用")
 connection = connect_db()
 create_recipes_table(connection)
 
+# 初始化session_state(相当于记事本，跨会话状态保存)中的食材行ID
+## ingredient_row_ids:当前要显示哪些行
+## next_ingredient_row_id:下一个要添加的行的ID，初始为1
+if "ingredient_row_ids" not in st.session_state:
+    st.session_state.ingredient_row_ids = [0]
+if "next_ingredient_row_id" not in st.session_state:
+    st.session_state.next_ingredient_row_id = 1
+    
+# 增加食材行
+def add_ingredient_row():
+    st.session_state.ingredient_row_ids.append(
+        st.session_state.next_ingredient_row_id
+    )
+    st.session_state.next_ingredient_row_id += 1
+    
+# 删除食材行
+def remove_ingredient_row(row_id):
+    st.session_state.ingredient_row_ids.remove(row_id)
+
 # 添加菜谱表单
-with st.form("添加菜谱"):
+with st.form("添加菜谱", enter_to_submit=False):
     recipe_name_text = st.text_input("菜谱名称")
-    ingredient_name_text = st.text_input("食材名称")
-    ingredient_amount_text = st.text_input("食材数量")
-    ingredient_unit_text = st.text_input("食材单位")
+    ## key: 1.区分同时显示的输入框 2.增行或删除行后认出原来的输入框
+    ## 什么时候用key：循环生成或会增删重排的组件；单个/固定/易区分的不用
+    ingredient_inputs = []
+    for row_id in st.session_state.ingredient_row_ids:
+        ingredient_name = st.text_input("食材名称", key=f"ingredient_name_{row_id}").strip()
+        ingredient_amount = st.text_input("食材数量", key=f"ingredient_amount_{row_id}").strip()
+        ingredient_unit = st.text_input("食材单位", key=f"ingredient_unit_{row_id}").strip()
+        ingredient_inputs.append({    
+                                "name": ingredient_name,
+                                "amount": ingredient_amount,
+                                "unit": ingredient_unit
+                                })
+        ### 按钮删除食材行，key帮助st按ID识别按钮
+        st.form_submit_button("删除食材",
+                            key=f"delete_ingredient_{row_id}",
+                            on_click=remove_ingredient_row, 
+                            args=(row_id,))
     ## 多行步骤，按行分割
     steps_text = st.text_area("步骤（按行分步骤）")
     submitted = st.form_submit_button("提交")
+    ## on_click:点击后立即添加食材行，再重新运行脚本
+    st.form_submit_button("添加食材", on_click=add_ingredient_row)
 ## 如果提交表单，重新运行脚本，submitted的值会变为True，进行添加菜谱操作
 if submitted:
     recipe_name = recipe_name_text.strip()
-    ingredient_name = ingredient_name_text.strip()
-    ingredient_amount = ingredient_amount_text.strip()
-    ingredient_unit = ingredient_unit_text.strip()
+    ingredients = []
+    missing_name = False
+    ### 判断食材名称/食材数量/单位是否为空，不为空添加进列表
+    ### 三项为空跳过，只有名称为空提示用户
+    for ingredient in ingredient_inputs:
+        if ingredient["name"]:
+            ingredients.append(ingredient)
+        elif ingredient["amount"] or ingredient["unit"]:
+            missing_name = True
     ### 多行步骤，按行分割
     steps = []
     for line in steps_text.splitlines():
@@ -39,21 +80,22 @@ if submitted:
         if cleaned_line:
             steps.append(cleaned_line)
     ### 判断输入是否为空，如果为空，提示用户
-    if recipe_name and ingredient_name and steps:
+    if not recipe_name:
+        st.write("菜谱名称不能为空！")
+    elif missing_name:
+        st.write("请补全食材名称！")
+    elif not ingredients:
+        st.write("至少要有一个食材！")
+    elif not steps:
+        st.write("步骤不能为空！")
+    else:
         recipe = {
                     "name": recipe_name,
-                    "ingredients": [{"name": ingredient_name, "amount": ingredient_amount, "unit": ingredient_unit}],
+                    "ingredients": ingredients,
                     "steps": steps
                 }
         new_recipe_id = add_recipe(connection, recipe)
         st.write(f"菜谱添加成功，ID为{new_recipe_id}")
-    else:
-        if not recipe_name:
-            st.write("菜谱名称不能为空！")
-        elif not ingredient_name:
-            st.write("食材名称不能为空！")
-        elif not steps:
-            st.write("步骤不能为空！")
 
 # 删除菜谱:输入要删除菜谱的ID-》检查输入是否为空-》检查ID是否为数字-》检查ID是否存在-》删除菜谱
 delete_id_text = st.text_input("要删除的菜谱ID")
