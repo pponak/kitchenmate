@@ -39,14 +39,23 @@ python -m venv .venv
 
 ## 运行测试
 
-在项目虚拟环境中安装 pytest 并运行数据层测试：
+在项目虚拟环境中安装 pytest 并运行页面与数据层测试：
 
 ```cmd
 .\.venv\Scripts\python.exe -m pip install pytest==9.1.1
-.\.venv\Scripts\python.exe -m pytest -q test_db_storage.py
+.\.venv\Scripts\python.exe -m pytest -q test_app.py test_db_storage.py
 ```
 
-`test_db_storage.py` 包含三条测试：添加后重新连接并读回菜谱、删除后重新连接并确认菜谱不存在、修改名称后重新连接并确认新名称已保存且食材与步骤不变。每条测试都通过 pytest 的 `tmp_path` 创建独立的 SQLite 数据库，不会修改本机的 `kitchenmate.db`。
+`test_db_storage.py` 包含三条数据层测试：添加后重新连接并读回菜谱、删除后重新连接并确认菜谱不存在、修改名称后重新连接并确认新名称已保存且食材与步骤不变。
+
+`test_app.py` 使用 Streamlit `AppTest` 模拟页面输入与按钮操作，包含四条回归测试：
+
+- 添加食材行后，原输入保留、新行出现，未提交时数据库仍为空；
+- 删除指定食材行后，该行输入框消失，其他行输入保留，数据库仍为空；
+- 提交包含两种食材的菜谱后，数据库只有一份菜谱，名称、食材名称/数量/单位和步骤均正确；
+- 已有有效食材时，另一行只填数量却缺名称，页面提示“请补全食材名称！”，整份菜谱不写入数据库。
+
+每条测试都通过 pytest 的 `tmp_path` 创建独立的 SQLite 数据库；页面测试在运行前用 `monkeypatch` 临时替换 `db_storage.DB_FILE`，测试结束后恢复。测试不会修改本机的 `kitchenmate.db`。2026-10-09 验证结果为 `7 passed`，仅代表上述场景通过。
 
 ## 数据与项目文件
 
@@ -60,6 +69,7 @@ kitchenmate/
 ├── kitchenmate.db  # 本机数据，首次运行时创建，不经 Git 同步
 ├── db_practice.py  # 早期 SQLite CRUD 练习
 ├── test_db_storage.py  # 使用临时数据库验证添加、读取、删除和修改名称
+├── test_app.py     # 使用 AppTest 和临时数据库验证四个页面交互场景
 ├── main.py         # 历史 JSON 命令行版本
 ├── storage.py      # 历史 JSON 读写
 ├── recipes.json    # 历史 JSON 示例数据
@@ -73,6 +83,6 @@ kitchenmate/
 
 - 页面添加支持多种食材和多条步骤；已保存菜谱目前只能在页面修改名称，不能编辑食材和步骤；
 - 页面删除没有二次确认；
-- 已有三条 SQLite 数据层自动化测试；页面交互仍以手动验收为主。
+- 已有三条 SQLite 数据层测试和四条页面交互测试；页面搜索、按 ID 删除/改名及其余边界场景尚未全部纳入自动化测试。
 
-下一步按实际需求补充编辑能力、边界测试和可靠性检查；分类、收藏等需要新增字段的功能留到数据设计明确后再做。
+下一步继续可靠性检查与运行说明验证，按实际需求补充页面测试和编辑能力；分类、收藏等需要新增字段的功能留到数据设计明确后再做。

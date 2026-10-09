@@ -79,7 +79,7 @@ if submitted:
         cleaned_line = line.strip()
         if cleaned_line:
             steps.append(cleaned_line)
-    ### 判断输入是否为空，如果为空，提示用户
+    ### 判断输入是否为空，如果为空，提示用户；校验通过，添加菜谱
     if not recipe_name:
         st.write("菜谱名称不能为空！")
     elif missing_name:
