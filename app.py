@@ -39,6 +39,10 @@ def remove_ingredient_row(row_id):
 # 添加菜谱表单
 with st.form("添加菜谱", enter_to_submit=False):
     recipe_name_text = st.text_input("菜谱名称")
+    ## 分类
+    category = st.selectbox("菜谱分类", 
+                            ["主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"], 
+                            index=6)
     ## key: 1.区分同时显示的输入框 2.增行或删除行后认出原来的输入框
     ## 什么时候用key：循环生成或会增删重排的组件；单个/固定/易区分的不用
     ingredient_inputs = []
@@ -92,7 +96,8 @@ if submitted:
         recipe = {
                     "name": recipe_name,
                     "ingredients": ingredients,
-                    "steps": steps
+                    "steps": steps,
+                    "category": category
                 }
         new_recipe_id = add_recipe(connection, recipe)
         st.write(f"菜谱添加成功，ID为{new_recipe_id}")

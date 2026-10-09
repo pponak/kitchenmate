@@ -19,7 +19,8 @@ def create_recipes_table(connection):
         id INTEGER PRIMARY KEY,
         name TEXT,
         ingredients TEXT,
-        steps TEXT
+        steps TEXT,
+        category TEXT DEFAULT '其他'
     )
     """
     )
@@ -43,13 +44,14 @@ def add_recipe(connection, recipe):
     
     cursor.execute(
     """
-    INSERT INTO recipes (name, ingredients, steps)
-    VALUES (?, ?, ?)
+    INSERT INTO recipes (name, ingredients, steps, category)
+    VALUES (?, ?, ?, ?)
     """,
     (
         recipe['name'],
         ingredients_text,
-        steps_text
+        steps_text,
+        recipe.get('category', '其他')
     )
     )
     
@@ -63,7 +65,7 @@ def get_all_recipes(connection):
     
     cursor.execute(
     """
-    SELECT id, name, ingredients, steps
+    SELECT id, name, ingredients, steps, category
     FROM recipes
     ORDER BY id
     """
@@ -77,7 +79,8 @@ def get_all_recipes(connection):
             "id": row[0],
             "name": row[1],
             "ingredients": json.loads(row[2]),
-            "steps": json.loads(row[3])
+            "steps": json.loads(row[3]),
+            "category": row[4]
         }
         recipes.append(recipe)
         
@@ -91,7 +94,7 @@ def get_recipe_by_id(connection, recipe_id):
     
     cursor.execute(
     """
-    SELECT id, name, ingredients, steps
+    SELECT id, name, ingredients, steps, category
     FROM recipes
     WHERE id = ?
     """,
@@ -107,7 +110,8 @@ def get_recipe_by_id(connection, recipe_id):
         "id": row[0],
         "name": row[1],
         "ingredients": json.loads(row[2]),
-        "steps": json.loads(row[3])
+        "steps": json.loads(row[3]),
+        "category": row[4]
     }
     
     return recipe
@@ -141,13 +145,13 @@ def delete_recipe(connection, recipe_id):
     
     connection.commit()
 
-# 搜索菜谱
+# 按名称搜索菜谱
 def search_recipes_by_name(connection, keyword):
     cursor = connection.cursor()
     
     cursor.execute(
     """
-        SELECT id, name, ingredients, steps
+        SELECT id, name, ingredients, steps, category
         FROM recipes
         WHERE name LIKE ?
         ORDER BY id
@@ -165,7 +169,8 @@ def search_recipes_by_name(connection, keyword):
             "id": row[0],
             "name": row[1],
             "ingredients": json.loads(row[2]),
-            "steps": json.loads(row[3])
+            "steps": json.loads(row[3]),
+            "category": row[4]
         }
         
         recipes.append(recipe)
