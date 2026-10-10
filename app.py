@@ -147,6 +147,12 @@ if update_clicked:
                 update_recipe_name(connection, update_id, update_newname)
                 st.write(f"已修改菜谱：{target_recipe['id']}. {target_recipe['name']} -> {update_newname}")
 
+# 选择分类，筛选菜谱
+selected_category = st.selectbox(
+            "筛选菜谱分类", 
+            ["全部", "主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"],
+            index=0)
+
 # 按名称搜索菜谱
 keyword = st.text_input("搜索菜谱名称").strip()
 ## 如果搜索框不为空，按名称搜索菜谱，否则获取所有菜谱
@@ -154,19 +160,33 @@ if keyword:
     recipes = search_recipes_by_name(connection, keyword)
 else:
     recipes = get_all_recipes(connection)
+## 如果选择的分类不是全部，按分类筛选菜谱    
+if selected_category != "全部":
+    recipes = [recipe for recipe in recipes if recipe["category"] == selected_category]
+
 ## 显示搜索结果
 if not recipes:
     if keyword:
-        st.write("没有找到相关菜谱")
+        st.write("没有找到符合搜索条件的相关菜谱")
     else:
-        st.write("没有菜谱")
+        if selected_category == "全部":
+            st.write("没有菜谱")
+        else:
+            st.write(f"{selected_category}分类下没有菜谱")
 else:
     if keyword:
-        st.write(f"关于{keyword}的搜索结果：\n")
+        if selected_category == "全部":
+            st.write(f"关于名称包含{keyword}的搜索结果：\n")
+        else:
+            st.write(f"关于分类为{selected_category}，名称包含{keyword}的搜索结果：\n")
     else:
-        st.write("所有菜谱：\n")
+        if selected_category == "全部":
+            st.write("所有菜谱：\n")
+        else:
+            st.write(f"所有分类为{selected_category}的菜谱：\n")
     for recipe in recipes:
         with st.expander(f"菜谱ID：{recipe['id']}，菜谱名称： {recipe['name']}"):
+            st.write(f"菜谱分类：{recipe['category']}")
             st.write("食材：")
             for ingredient in recipe['ingredients']:
                 st.write(f"{ingredient['name']}：{ingredient['amount']} {ingredient['unit']}")

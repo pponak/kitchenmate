@@ -147,3 +147,118 @@ def test_submit_with_missing_ingredient_name_is_rejected(tmp_path, monkeypatch):
     for element in at.markdown:
         messages.append(element.value)
     assert "请补全食材名称！" in messages
+    
+# 测试：分类筛选和名称搜索同时生效
+def test_category_and_name_filters_work_together(tmp_path, monkeypatch):
+    test_db_path = tmp_path / "test_db.db"
+    monkeypatch.setattr(db_storage, "DB_FILE", test_db_path)
+    ## 在测试数据库中插入三条菜谱
+    connection = db_storage.connect_db()
+    db_storage.create_recipes_table(connection)
+    test_recipes = [
+        {
+        "name": "鸡蛋炒番茄",
+        "category": "主菜",
+        "ingredients": [
+            {"name": "鸡蛋", "amount": "2", "unit": "个"},
+            {"name": "番茄", "amount": "1", "unit": "个"},
+        ],
+        "steps": ["炒熟鸡蛋和番茄"],
+        },
+        {
+        "name": "鸡蛋汤",
+        "category": "汤羹",
+        "ingredients": [
+            {"name": "鸡蛋", "amount": "1", "unit": "个"},
+        ],
+        "steps": ["水开后加入鸡蛋煮熟"],
+        },
+        {
+        "name": "红烧排骨",
+        "category": "主菜",
+        "ingredients": [
+            {"name": "排骨", "amount": "500", "unit": "克"},
+        ],
+        "steps": ["将排骨炖熟"],
+        },
+    ]
+
+    for recipe in test_recipes:
+        db_storage.add_recipe(connection, recipe)
+
+    connection.close()
+    ## 运行页面
+    at = AppTest.from_file("app.py")
+    at.run()
+    assert not at.exception
+    
+    ## 选择分类“主菜”，输入搜索词“鸡蛋”
+    assert at.selectbox[1].label == "筛选菜谱分类"
+    at.selectbox[1].select("主菜")
+    assert at.text_input[-1].label == "搜索菜谱名称"
+    at.text_input[-1].input("鸡蛋")
+    at.run()
+    assert not at.exception
+    ## 确认页面只显示“鸡蛋炒番茄”
+    ## expander.label 是包含菜谱ID、名称的字符串
+    ## recipe_labels 是字符串列表
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 1
+    assert "鸡蛋炒番茄" in recipe_labels[0]
+    assert "鸡蛋汤" not in recipe_labels[0]
+    assert "红烧排骨" not in recipe_labels[0]
+    
+    ## 筛选分类改为"全部"，搜索词不变
+    at.selectbox[1].select("全部")
+    at.run()
+    assert not at.exception
+    ## 确认页面只显示“鸡蛋炒番茄”和“鸡蛋汤”
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 2
+    assert "鸡蛋炒番茄" in recipe_labels[0]
+    assert "鸡蛋汤" in recipe_labels[1]
+    
+    ## 只筛选分类，不搜索
+    at.text_input[-1].input("")
+    at.selectbox[1].select("主菜")
+    at.run()
+    assert not at.exception
+    ## 确认页面只显示“鸡蛋炒番茄”和“红烧排骨”
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 2
+    assert "鸡蛋炒番茄" in recipe_labels[0]
+    assert "红烧排骨" in recipe_labels[1]
+    
+    ## 不筛选分类，不搜索
+    at.selectbox[1].select("全部")
+    at.run()
+    assert not at.exception
+    ## 确认页面显示所有菜谱
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 3
+    assert "鸡蛋炒番茄" in recipe_labels[0]
+    assert "鸡蛋汤" in recipe_labels[1]
+    assert "红烧排骨" in recipe_labels[2]
+    
+    ## 空结果
+    at.selectbox[1].select("甜点")
+    at.run()
+    assert not at.exception
+    ## 确认页面没有菜谱
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 0
+    ## 确认页面有提示
+    messages = []
+    for element in at.markdown:
+        messages.append(element.value)
+    assert "甜点分类下没有菜谱" in messages
