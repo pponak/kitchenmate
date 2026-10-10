@@ -185,7 +185,8 @@ def test_category_and_name_filters_work_together(tmp_path, monkeypatch):
 
     for recipe in test_recipes:
         db_storage.add_recipe(connection, recipe)
-
+    ## 保存筛选前的测试数据
+    before_recipes = db_storage.get_all_recipes(connection)
     connection.close()
     ## 运行页面
     at = AppTest.from_file("app.py")
@@ -209,6 +210,10 @@ def test_category_and_name_filters_work_together(tmp_path, monkeypatch):
     assert "鸡蛋炒番茄" in recipe_labels[0]
     assert "鸡蛋汤" not in recipe_labels[0]
     assert "红烧排骨" not in recipe_labels[0]
+    messages = []
+    for element in at.markdown:
+        messages.append(element.value)
+    assert "菜谱分类：主菜" in messages
     
     ## 筛选分类改为"全部"，搜索词不变
     at.selectbox[1].select("全部")
@@ -262,3 +267,25 @@ def test_category_and_name_filters_work_together(tmp_path, monkeypatch):
     for element in at.markdown:
         messages.append(element.value)
     assert "甜点分类下没有菜谱" in messages
+    
+    ## 分类切换为全部，搜索词设置面包
+    at.selectbox[1].select("全部")
+    at.text_input[-1].input("面包")
+    at.run()
+    assert not at.exception
+    ## 确认页面没有菜谱
+    recipe_labels = []
+    for expander in at.expander:
+        recipe_labels.append(expander.label)
+    assert len(recipe_labels) == 0
+    ## 确认页面有提示    
+    messages = []
+    for element in at.markdown:
+        messages.append(element.value)
+    assert "没有找到符合搜索条件的相关菜谱" in messages
+    
+    ## 确认筛选后数据库中的数据没有变化
+    connection = db_storage.connect_db()
+    after_recipes = db_storage.get_all_recipes(connection)
+    connection.close()
+    assert before_recipes == after_recipes

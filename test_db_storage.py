@@ -1,107 +1,218 @@
-### 数据层测试 ###
-#################
+"""使用独立临时数据库，验证 SQLite 数据层的实际行为。"""
+
+from contextlib import closing
 import sqlite3
+
+import pytest
+
+import db_storage
 from db_storage import (
-    create_recipes_table,
     add_recipe,
-    get_recipe_by_id,
+    create_recipes_table,
     delete_recipe,
-    update_recipe_name
+    get_all_recipes,
+    get_recipe_by_id,
+    search_recipes_by_name,
+    update_recipe_favorite,
+    update_recipe_name,
 )
 
-# 添加菜谱测试
-def test_add_then_get_recipe(tmp_path):
-    db_path = tmp_path / "test.db"
-    ## 创建测试数据库连接并建表
-    connection = sqlite3.connect(db_path)
-    create_recipes_table(connection)
 
-    test_recipe = {
-                    "name": "测试用菜谱1",
-                    "ingredients": [
-                    {
-                    "name": "dsf",
-                    "amount": "1",
-                    "unit": "g"
-                    }],
-                    "steps": ["清洗食材"]
-                }
-
-    test_recipe_id = add_recipe(connection, test_recipe)
-    connection.close()
-    ## 重新连接数据库，验证菜谱已经持久保存
-    connection = sqlite3.connect(db_path)
-    find_recipe = get_recipe_by_id(connection, test_recipe_id)
-    ## 断言菜谱存在，且内容一致
-    assert find_recipe is not None
-    assert find_recipe['id'] == test_recipe_id
-    assert find_recipe['name'] == test_recipe['name']
-    assert find_recipe['ingredients'] == test_recipe['ingredients']
-    assert find_recipe['steps'] == test_recipe['steps']
-
-    connection.close()
+@pytest.fixture
+def db_path(tmp_path, monkeypatch):
+    """每项测试使用自己的数据库，也让 connect_db 指向这个临时文件。"""
+    path = tmp_path / "test.db"
+    monkeypatch.setattr(db_storage, "DB_FILE", path)
+    with closing(db_storage.connect_db()) as connection:
+        create_recipes_table(connection)
+    return path
 
 
-# 删除菜谱测试
-def test_delete_recipe(tmp_path):
-    db_path = tmp_path / "test.db"
-    connection = sqlite3.connect(db_path)
-    create_recipes_table(connection)
+def make_recipe(name="鸡蛋汤", category="汤羹"):
+    """集中准备示例数据，每次调用都返回独立的字典和列表。"""
+    return {
+        "name": name,
+        "category": category,
+        "ingredients": [
+            {"name": "鸡蛋", "amount": "2", "unit": "个"},
+            {"name": "水", "amount": "300", "unit": "毫升"},
+        ],
+        "steps": ["打散鸡蛋", "水开后加入鸡蛋煮熟"],
+    }
 
-    test_recipe = {
-                "name": "测试用菜谱1",
-                "ingredients": [
-                {
-                "name": "dsf",
-                "amount": "1",
-                "unit": "g"
-                }],
-                "steps": ["清洗食材"]
-            }
-    ## 添加菜谱到测试数据库并获取id
-    test_recipe_id = add_recipe(connection, test_recipe)
-    find_recipe = get_recipe_by_id(connection, test_recipe_id)
-    ## 确认菜谱存在
-    assert find_recipe is not None
-    ## 删除菜谱
-    delete_recipe(connection, test_recipe_id)
-    connection.close()
-    ## 重新连接数据库
-    connection = sqlite3.connect(db_path)
-    find_deleted_recipe = get_recipe_by_id(connection, test_recipe_id)
-    ## 确认菜谱已被删除
-    assert find_deleted_recipe is None
 
-    connection.close()
+def expected_recipe(recipe_id, recipe, favorite=0):
+    """查询结果包含数据库 ID 和收藏状态，新菜谱默认未收藏。"""
+    return {"id": recipe_id, **recipe, "favorite": favorite}
 
-# 修改菜谱名称测试
-def test_update_recipe_name(tmp_path):
-    db_path = tmp_path / "test.db"
-    connection = sqlite3.connect(db_path)
-    create_recipes_table(connection)
 
-    test_recipe = {
-                "name": "测试用菜谱1",
-                "ingredients": [
-                {
-                "name": "dsf",
-                "amount": "1",
-                "unit": "g"
-                }],
-                "steps": ["清洗食材"]
-            }
-    ## 添加菜谱到测试数据库并获取id
-    test_recipe_id = add_recipe(connection, test_recipe)
-    new_name = "已经改名的菜谱"
-    update_recipe_name(connection, test_recipe_id, new_name)
-    connection.close()
+def test_add_then_get_recipe(db_path):
+    recipe = make_recipe()
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
 
-    ## 重新连接数据库
-    connection = sqlite3.connect(db_path)
-    find_recipe = get_recipe_by_id(connection, test_recipe_id)
-    ## 确认菜谱名称已被修改,且其他内容不变
-    assert find_recipe is not None
-    assert find_recipe['name'] == new_name
-    assert find_recipe['ingredients'] == test_recipe['ingredients']
-    assert find_recipe['steps'] == test_recipe['steps']
-    connection.close()
+    # 关闭再连接，确认完整菜谱已经持久保存。
+    with closing(sqlite3.connect(db_path)) as connection:
+        actual = get_recipe_by_id(connection, recipe_id)
+        assert actual == expected_recipe(recipe_id, recipe)
+
+
+def test_delete_recipe(db_path):
+    recipe = make_recipe()
+    other_recipe = make_recipe("番茄汤")
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        other_id = add_recipe(connection, other_recipe)
+        update_recipe_favorite(connection, other_id, 1)
+        delete_recipe(connection, recipe_id)
+
+    # 指定菜谱消失，其他菜谱的所有字段保持不变。
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_recipe_by_id(connection, recipe_id) is None
+        assert get_all_recipes(connection) == [expected_recipe(other_id, other_recipe, 1)]
+
+
+def test_update_recipe_name(db_path):
+    recipe = make_recipe()
+    other_recipe = make_recipe("番茄汤")
+    new_name = "妈妈的'鸡蛋汤"
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        other_id = add_recipe(connection, other_recipe)
+        update_recipe_favorite(connection, recipe_id, 1)
+        update_recipe_name(connection, recipe_id, new_name)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        expected = expected_recipe(recipe_id, {**recipe, "name": new_name}, 1)
+        # 只有目标菜谱的名称改变，分类、食材、步骤和另一份菜谱不变。
+        assert get_recipe_by_id(connection, recipe_id) == expected
+        assert get_all_recipes(connection) == [
+            expected,
+            expected_recipe(other_id, other_recipe),
+        ]
+
+
+@pytest.mark.parametrize(
+    "include_category, expected_category",
+    [(True, "汤羹"), (False, "其他")],
+    ids=["selected-category", "missing-category-default"],
+)
+def test_saved_category_is_returned_by_queries(
+    db_path, include_category, expected_category
+):
+    recipe = make_recipe()
+    if not include_category:
+        del recipe["category"]
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+
+    expected = expected_recipe(recipe_id, {**recipe, "category": expected_category})
+    # 两种分类场景复用相同流程，并分别检查三个查询接口的完整结果。
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_recipe_by_id(connection, recipe_id) == expected
+        assert get_all_recipes(connection) == [expected]
+        assert search_recipes_by_name(connection, "鸡蛋") == [expected]
+
+
+def test_empty_database_returns_no_recipes(db_path):
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_all_recipes(connection) == []
+        assert get_recipe_by_id(connection, 1) is None
+        assert search_recipes_by_name(connection, "鸡蛋") == []
+
+
+def test_search_recipes_by_name(db_path):
+    recipes = [
+        make_recipe("番茄汤"),
+        make_recipe("鸡蛋汤"),
+        make_recipe("鸡蛋炒番茄", "主菜"),
+    ]
+    expected = []
+    with closing(sqlite3.connect(db_path)) as connection:
+        for recipe in recipes:
+            recipe_id = add_recipe(connection, recipe)
+            expected.append(expected_recipe(recipe_id, recipe))
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        # 名称部分匹配，多个结果按 ID 升序，名称和分类等字段完整保留。
+        assert search_recipes_by_name(connection, "鸡蛋") == expected[1:]
+        assert search_recipes_by_name(connection, "面包") == []
+        assert get_all_recipes(connection) == expected
+
+
+def test_search_treats_quotes_as_text(db_path):
+    recipe = make_recipe("妈妈的'鸡蛋汤")
+    other_recipe = make_recipe("番茄汤")
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        other_id = add_recipe(connection, other_recipe)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        expected = expected_recipe(recipe_id, recipe)
+        assert search_recipes_by_name(connection, "'鸡蛋") == [expected]
+        # 类似 SQL 的搜索文字也作为参数，不会扩大匹配范围或修改数据。
+        assert search_recipes_by_name(connection, "' OR 1=1 --") == []
+        assert get_all_recipes(connection) == [
+            expected,
+            expected_recipe(other_id, other_recipe),
+        ]
+
+
+def test_missing_id_does_not_change_existing_recipes(db_path):
+    recipe = make_recipe()
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        missing_id = recipe_id + 1
+        assert get_recipe_by_id(connection, missing_id) is None
+        update_recipe_name(connection, missing_id, "不存在的菜谱")
+        update_recipe_favorite(connection, missing_id, 1)
+        delete_recipe(connection, missing_id)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_all_recipes(connection) == [expected_recipe(recipe_id, recipe)]
+        assert get_recipe_by_id(connection, missing_id) is None
+
+
+def test_create_recipes_table_keeps_existing_data(db_path):
+    recipe = make_recipe()
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        create_recipes_table(connection)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_all_recipes(connection) == [expected_recipe(recipe_id, recipe)]
+
+
+@pytest.mark.parametrize(
+    "initial_favorite, target_favorite",
+    [(0, 1), (1, 0)],
+    ids=["favorite", "unfavorite"],
+)
+def test_update_recipe_favorite_is_persistent(
+    db_path, initial_favorite, target_favorite
+):
+    recipe = make_recipe()
+    other_recipe = make_recipe("番茄汤")
+    with closing(sqlite3.connect(db_path)) as connection:
+        recipe_id = add_recipe(connection, recipe)
+        other_id = add_recipe(connection, other_recipe)
+        if initial_favorite:
+            update_recipe_favorite(connection, recipe_id, initial_favorite)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        # 先确认初始状态，再执行收藏或取消收藏。
+        assert get_recipe_by_id(connection, recipe_id) == expected_recipe(
+            recipe_id, recipe, initial_favorite
+        )
+        update_recipe_favorite(connection, recipe_id, target_favorite)
+
+    # 关闭重连后，三个接口都能读到目标状态，其他菜谱及字段不变。
+    with closing(sqlite3.connect(db_path)) as connection:
+        expected = expected_recipe(recipe_id, recipe, target_favorite)
+        assert get_recipe_by_id(connection, recipe_id) == expected
+        assert get_all_recipes(connection) == [
+            expected,
+            expected_recipe(other_id, other_recipe),
+        ]
+        assert search_recipes_by_name(connection, "鸡蛋") == [expected]

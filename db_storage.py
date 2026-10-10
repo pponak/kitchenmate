@@ -20,7 +20,8 @@ def create_recipes_table(connection):
         name TEXT,
         ingredients TEXT,
         steps TEXT,
-        category TEXT DEFAULT '其他'
+        category TEXT DEFAULT '其他',
+        favorite INTEGER DEFAULT 0
     )
     """
     )
@@ -65,7 +66,7 @@ def get_all_recipes(connection):
     
     cursor.execute(
     """
-    SELECT id, name, ingredients, steps, category
+    SELECT id, name, ingredients, steps, category, favorite
     FROM recipes
     ORDER BY id
     """
@@ -80,7 +81,8 @@ def get_all_recipes(connection):
             "name": row[1],
             "ingredients": json.loads(row[2]),
             "steps": json.loads(row[3]),
-            "category": row[4]
+            "category": row[4],
+            "favorite": row[5]
         }
         recipes.append(recipe)
         
@@ -94,7 +96,7 @@ def get_recipe_by_id(connection, recipe_id):
     
     cursor.execute(
     """
-    SELECT id, name, ingredients, steps, category
+    SELECT id, name, ingredients, steps, category, favorite
     FROM recipes
     WHERE id = ?
     """,
@@ -111,7 +113,8 @@ def get_recipe_by_id(connection, recipe_id):
         "name": row[1],
         "ingredients": json.loads(row[2]),
         "steps": json.loads(row[3]),
-        "category": row[4]
+        "category": row[4],
+        "favorite": row[5]
     }
     
     return recipe
@@ -151,7 +154,7 @@ def search_recipes_by_name(connection, keyword):
     
     cursor.execute(
     """
-        SELECT id, name, ingredients, steps, category
+        SELECT id, name, ingredients, steps, category, favorite
         FROM recipes
         WHERE name LIKE ?
         ORDER BY id
@@ -170,10 +173,26 @@ def search_recipes_by_name(connection, keyword):
             "name": row[1],
             "ingredients": json.loads(row[2]),
             "steps": json.loads(row[3]),
-            "category": row[4]
+            "category": row[4],
+            "favorite": row[5]
         }
         
         recipes.append(recipe)
         
     return recipes
+
+
+# 更新收藏状态
+def update_recipe_favorite(connection, recipe_id, favorite):
+    cursor = connection.cursor()
     
+    cursor.execute(
+    """
+    UPDATE recipes
+    SET favorite = ?
+    where id = ?
+    """,
+    (favorite, recipe_id)
+    )
+    
+    connection.commit()
