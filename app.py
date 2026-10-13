@@ -7,7 +7,8 @@ from db_storage import (
     add_recipe,
     get_recipe_by_id,
     delete_recipe,
-    update_recipe_name
+    update_recipe_name,
+    update_recipe_favorite
     )
 
 # 标题
@@ -102,6 +103,7 @@ if submitted:
         new_recipe_id = add_recipe(connection, recipe)
         st.write(f"菜谱添加成功，ID为{new_recipe_id}")
 
+
 # 删除菜谱:输入要删除菜谱的ID-》检查输入是否为空-》检查ID是否为数字-》检查ID是否存在-》删除菜谱
 delete_id_text = st.text_input("要删除的菜谱ID")
 check_clicked = st.button("删除菜谱")
@@ -122,6 +124,7 @@ if check_clicked:
             else:
                 delete_recipe(connection, delete_id)
                 st.write(f"已删除菜谱：{target_recipe['id']}. {target_recipe['name']}")
+
 
 # 修改菜谱名称
 update_id_text = st.text_input("要修改的菜谱ID")
@@ -147,6 +150,8 @@ if update_clicked:
                 update_recipe_name(connection, update_id, update_newname)
                 st.write(f"已修改菜谱：{target_recipe['id']}. {target_recipe['name']} -> {update_newname}")
 
+
+# 按名称，分类，收藏来筛选显示的菜谱
 # 选择分类，筛选菜谱
 selected_category = st.selectbox(
             "筛选菜谱分类", 
@@ -155,6 +160,8 @@ selected_category = st.selectbox(
 
 # 按名称搜索菜谱
 keyword = st.text_input("搜索菜谱名称").strip()
+# 勾选是否筛选收藏
+favorite_only = st.checkbox("只看收藏")
 ## 如果搜索框不为空，按名称搜索菜谱，否则获取所有菜谱
 if keyword:
     recipes = search_recipes_by_name(connection, keyword)
@@ -163,28 +170,50 @@ else:
 ## 如果选择的分类不是全部，按分类筛选菜谱    
 if selected_category != "全部":
     recipes = [recipe for recipe in recipes if recipe["category"] == selected_category]
-
+## 筛选已收藏的菜谱
+if favorite_only:
+    recipes = [recipe for recipe in recipes if recipe["favorite"] == 1]
 ## 显示搜索结果
 if not recipes:
-    if keyword:
+    if favorite_only:
+        st.write("没有符合当前条件的收藏菜谱")
+    elif keyword:
         st.write("没有找到符合搜索条件的相关菜谱")
+    elif selected_category == "全部":
+        st.write("没有菜谱")
     else:
-        if selected_category == "全部":
-            st.write("没有菜谱")
-        else:
-            st.write(f"{selected_category}分类下没有菜谱")
+        st.write(f"{selected_category}分类下没有菜谱")
 else:
-    if keyword:
+    if favorite_only:
+        st.write("符合当前搜索条件的收藏菜谱：\n")
+    elif keyword:
         if selected_category == "全部":
             st.write(f"关于名称包含{keyword}的搜索结果：\n")
         else:
             st.write(f"关于分类为{selected_category}，名称包含{keyword}的搜索结果：\n")
+    elif selected_category == "全部":
+        st.write("所有菜谱：\n")
     else:
-        if selected_category == "全部":
-            st.write("所有菜谱：\n")
-        else:
-            st.write(f"所有分类为{selected_category}的菜谱：\n")
+        st.write(f"所有分类为{selected_category}的菜谱：\n")
+        
     for recipe in recipes:
+        ### 显示收藏状态
+        if recipe["favorite"] == 1:
+            star_label = "★"
+        else:
+            star_label = "☆"
+        
+        favorite_clicked = st.button(star_label, key=f"favorite_{recipe['id']}")
+        ### 如果点击收藏按钮，更新收藏状态，重新运行脚本
+        if favorite_clicked:
+            if recipe["favorite"] == 1:
+                new_favorite = 0
+            else:
+                new_favorite = 1
+            update_recipe_favorite(connection, recipe["id"], new_favorite)
+            connection.close()
+            st.rerun()
+        
         with st.expander(f"菜谱ID：{recipe['id']}，菜谱名称： {recipe['name']}"):
             st.write(f"菜谱分类：{recipe['category']}")
             st.write("食材：")
