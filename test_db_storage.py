@@ -13,6 +13,7 @@ from db_storage import (
     get_all_recipes,
     get_recipe_by_id,
     search_recipes_by_name,
+    update_recipe_content,
     update_recipe_favorite,
     update_recipe_name,
 )
@@ -166,6 +167,7 @@ def test_missing_id_does_not_change_existing_recipes(db_path):
         missing_id = recipe_id + 1
         assert get_recipe_by_id(connection, missing_id) is None
         update_recipe_name(connection, missing_id, "不存在的菜谱")
+        update_recipe_content(connection, missing_id, [], [])
         update_recipe_favorite(connection, missing_id, 1)
         delete_recipe(connection, missing_id)
 
@@ -214,5 +216,47 @@ def test_update_recipe_favorite_is_persistent(
         assert get_all_recipes(connection) == [
             expected,
             expected_recipe(other_id, other_recipe),
+        ]
+        assert search_recipes_by_name(connection, "鸡蛋") == [expected]
+
+
+@pytest.mark.parametrize(
+    "new_ingredients, new_steps",
+    [
+        (
+            [
+                {"name": "鸡蛋", "amount": "3", "unit": "个"},
+                {"name": "水", "amount": "400", "unit": "毫升"},
+                {"name": "盐", "amount": "", "unit": ""},
+            ],
+            ["打散鸡蛋，加入'盐'", "水开后倒入鸡蛋", "煮熟后盛出"],
+        ),
+        (
+            [{"name": "鸭蛋", "amount": "1", "unit": "个"}],
+            ["煮熟鸭蛋"],
+        ),
+    ],
+    ids=["more-ingredients-and-steps", "fewer-ingredients-and-steps"],
+)
+def test_update_recipe_content_is_persistent(db_path, new_ingredients, new_steps):
+    """增减食材和步骤后重连，三个查询接口都返回新内容及原其他字段。"""
+    other_recipe = make_recipe("番茄汤")
+    target_recipe = make_recipe()
+    with closing(sqlite3.connect(db_path)) as connection:
+        other_id = add_recipe(connection, other_recipe)
+        target_id = add_recipe(connection, target_recipe)
+        update_recipe_favorite(connection, target_id, 1)
+        update_recipe_content(connection, target_id, new_ingredients, new_steps)
+
+    expected = expected_recipe(
+        target_id,
+        {**target_recipe, "ingredients": new_ingredients, "steps": new_steps},
+        favorite=1,
+    )
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_recipe_by_id(connection, target_id) == expected
+        assert get_all_recipes(connection) == [
+            expected_recipe(other_id, other_recipe),
+            expected,
         ]
         assert search_recipes_by_name(connection, "鸡蛋") == [expected]

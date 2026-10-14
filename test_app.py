@@ -504,3 +504,306 @@ def test_unfavorite_in_filtered_list_preserves_other_filters(
     assert at.selectbox[1].value == "主菜"
     assert at.text_input[-1].value == "排骨"
     assert _read_page_recipes() == expected_recipes
+
+# 以下测试保护已保存菜谱的编辑、动态食材行、校验和持久保存。
+@pytest.fixture
+def edit_page_recipes(tmp_path, monkeypatch):
+    """目标菜谱不是第一份，并已收藏，便于检查是否误改其他记录。"""
+    monkeypatch.setattr(db_storage, "DB_FILE", tmp_path / "editing.db")
+    recipes = [
+        {
+            "name": "蔬菜汤",
+            "category": "汤羹",
+            "ingredients": [{"name": "水", "amount": "300", "unit": "毫升"}],
+            "steps": ["烧开水"],
+        },
+        {
+            "name": "鸡蛋炒番茄",
+            "category": "主菜",
+            "ingredients": [
+                {"name": "鸡蛋", "amount": "2", "unit": "个"},
+                {"name": "番茄", "amount": "1", "unit": "个"},
+            ],
+            "steps": ["打散鸡蛋", "先炒鸡蛋，再炒番茄"],
+        },
+    ]
+    with closing(db_storage.connect_db()) as connection:
+        db_storage.create_recipes_table(connection)
+        for recipe in recipes:
+            recipe_id = db_storage.add_recipe(connection, recipe)
+        db_storage.update_recipe_favorite(connection, recipe_id, 1)
+    return _read_page_recipes()
+
+
+def _open_recipe_editor(at, recipe_id):
+    """通过页面按钮进入编辑，不直接修改应用的会话状态。"""
+    assert not at.exception
+    at.button(key=f"edit_{recipe_id}").click().run()
+    assert not at.exception
+    assert at.session_state["editing_recipe_id"] == recipe_id
+
+
+def _set_edit_ingredient(at, recipe_id, row_id, ingredient):
+    for field in ("name", "amount", "unit"):
+        at.text_input(key=f"edit_ingredient_{field}_{recipe_id}_{row_id}").input(
+            ingredient[field]
+        )
+
+
+def _assert_edit_ingredient(at, recipe_id, row_id, ingredient):
+    for field in ("name", "amount", "unit"):
+        assert at.text_input(
+            key=f"edit_ingredient_{field}_{recipe_id}_{row_id}"
+        ).value == ingredient[field]
+
+
+def _submit_recipe_edit(at):
+    save_buttons = [button for button in at.button if button.label == "保存"]
+    assert len(save_buttons) == 1
+    save_buttons[0].click().run()
+    assert not at.exception
+
+
+def test_edit_prefills_saved_recipe(edit_page_recipes):
+    """编辑框取当前菜谱的原食材和步骤，进入编辑本身不写入数据库。"""
+    target = edit_page_recipes[1]
+    at = AppTest.from_file("app.py").run()
+    assert not at.exception
+    assert f"edit_steps_{target['id']}" not in [widget.key for widget in at.text_area]
+
+    _open_recipe_editor(at, target["id"])
+    for row_id, ingredient in enumerate(target["ingredients"]):
+        _assert_edit_ingredient(at, target["id"], row_id, ingredient)
+    assert at.text_area(key=f"edit_steps_{target['id']}").value == "\n".join(
+        target["steps"]
+    )
+    assert _read_page_recipes() == edit_page_recipes
+
+
+def test_edit_add_ingredient_row_keeps_input(edit_page_recipes):
+    """增行保留原输入和步骤；再次增行或点击编辑不重置草稿。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    at.text_input(key=f"edit_ingredient_amount_{recipe_id}_0").input("3")
+    at.text_area(key=f"edit_steps_{recipe_id}").input("打散鸡蛋\n炒熟后加盐")
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    _assert_edit_ingredient(
+        at, recipe_id, 0, {"name": "鸡蛋", "amount": "3", "unit": "个"}
+    )
+    _assert_edit_ingredient(at, recipe_id, 1, target["ingredients"][1])
+    _assert_edit_ingredient(
+        at, recipe_id, 2, {"name": "", "amount": "", "unit": ""}
+    )
+    assert at.text_area(key=f"edit_steps_{recipe_id}").value == "打散鸡蛋\n炒熟后加盐"
+
+    new_ingredient = {"name": "盐", "amount": "1", "unit": "克"}
+    _set_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    _assert_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    _assert_edit_ingredient(
+        at, recipe_id, 3, {"name": "", "amount": "", "unit": ""}
+    )
+    _open_recipe_editor(at, recipe_id)
+    _assert_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    assert at.session_state["edit_ingredient_row_ids"] == [0, 1, 2, 3]
+    assert at.session_state["ingredient_row_ids"] == [0]
+    assert _read_page_recipes() == edit_page_recipes
+
+
+def test_edit_remove_ingredient_row_keeps_other_input(edit_page_recipes):
+    """删除中间行后保留其他输入，再增行使用尚未用过的 ID。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    at.text_input(key=f"edit_ingredient_amount_{recipe_id}_0").input("3")
+    at.text_area(key=f"edit_steps_{recipe_id}").input("炒熟后加盐")
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    new_ingredient = {"name": "盐", "amount": "1", "unit": "克"}
+    _set_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    at.button(key=f"delete_edit_ingredient_{recipe_id}_1").click().run()
+    assert not at.exception
+    assert f"edit_ingredient_name_{recipe_id}_1" not in [
+        widget.key for widget in at.text_input
+    ]
+    _assert_edit_ingredient(
+        at, recipe_id, 0, {"name": "鸡蛋", "amount": "3", "unit": "个"}
+    )
+    _assert_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    assert at.text_area(key=f"edit_steps_{recipe_id}").value == "炒熟后加盐"
+
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    assert at.session_state["edit_ingredient_row_ids"] == [0, 2, 3]
+    _assert_edit_ingredient(at, recipe_id, 2, new_ingredient)
+    _assert_edit_ingredient(
+        at, recipe_id, 3, {"name": "", "amount": "", "unit": ""}
+    )
+    assert _read_page_recipes() == edit_page_recipes
+
+    _submit_recipe_edit(at)
+    expected = [
+        edit_page_recipes[0],
+        {
+            **target,
+            "ingredients": [
+                {"name": "鸡蛋", "amount": "3", "unit": "个"},
+                new_ingredient,
+            ],
+            "steps": ["炒熟后加盐"],
+        },
+    ]
+    assert _read_page_recipes() == expected
+    assert at.session_state["editing_recipe_id"] is None
+
+
+def test_edit_save_content_is_persistent(edit_page_recipes):
+    """保存清理后的输入，刷新详情并退出编辑；筛选和其他字段保持。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    assert not at.exception
+    at.selectbox[1].select("主菜")
+    search = [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][0]
+    search.input("鸡蛋")
+    at.checkbox[0].check().run()
+    _assert_recipe_list(at, [target])
+    _open_recipe_editor(at, recipe_id)
+    _set_edit_ingredient(
+        at, recipe_id, 0, {"name": " 鸡蛋 ", "amount": " 3 ", "unit": " 个 "}
+    )
+    at.text_area(key=f"edit_steps_{recipe_id}").input(
+        "  打散鸡蛋  \n\n  将鸡蛋与番茄炒熟  \n  "
+    )
+    # 新增的全空行应被忽略，不应阻止保存或成为空食材。
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    _submit_recipe_edit(at)
+    expected_target = {
+        **target,
+        "ingredients": [
+            {"name": "鸡蛋", "amount": "3", "unit": "个"},
+            target["ingredients"][1],
+        ],
+        "steps": ["打散鸡蛋", "将鸡蛋与番茄炒熟"],
+    }
+    expected = [edit_page_recipes[0], expected_target]
+    assert _read_page_recipes() == expected
+    assert at.session_state["editing_recipe_id"] is None
+    assert f"edit_steps_{recipe_id}" not in [widget.key for widget in at.text_area]
+    _assert_recipe_list(at, [expected_target])
+    assert at.selectbox[1].value == "主菜"
+    assert at.checkbox[0].value is True
+    assert [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][
+        0
+    ].value == "鸡蛋"
+    messages = _page_messages(at)
+    assert "鸡蛋：3 个" in messages
+    assert "步骤2：将鸡蛋与番茄炒熟" in messages
+
+    at.run()
+    assert not at.exception
+    assert _read_page_recipes() == expected
+    reopened = AppTest.from_file("app.py").run()
+    _assert_recipe_list(reopened, expected)
+    _open_recipe_editor(reopened, recipe_id)
+    for row_id, ingredient in enumerate(expected_target["ingredients"]):
+        _assert_edit_ingredient(reopened, recipe_id, row_id, ingredient)
+    assert reopened.text_area(key=f"edit_steps_{recipe_id}").value == "\n".join(
+        expected_target["steps"]
+    )
+
+
+@pytest.mark.parametrize(
+    "case, expected_error",
+    [
+        ("amount-without-name", "请补全食材名称！"),
+        ("unit-without-name", "请补全食材名称！"),
+        ("all-ingredients-empty", "至少要有一个食材！"),
+        ("steps-empty", "步骤不能为空！"),
+        ("multiple-errors", "请补全食材名称！"),
+    ],
+    ids=["missing-name-amount", "missing-name-unit", "no-ingredients", "no-steps", "error-priority"],
+)
+def test_edit_invalid_input_is_rejected(edit_page_recipes, case, expected_error):
+    """错误输入不写库，准确提示，并保留编辑状态及当前输入。"""
+    recipe_id = edit_page_recipes[1]["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    if case == "amount-without-name":
+        changes = [(0, {"name": "   ", "amount": "2", "unit": ""})]
+    elif case == "unit-without-name":
+        changes = [(0, {"name": "", "amount": "", "unit": "个"})]
+    elif case in ("all-ingredients-empty", "multiple-errors"):
+        changes = [
+            (0, {"name": "   ", "amount": "   ", "unit": "   "}),
+            (1, {"name": "", "amount": "", "unit": ""}),
+        ]
+        if case == "multiple-errors":
+            changes[0] = (0, {"name": "", "amount": "2", "unit": ""})
+    else:
+        changes = []
+    for row_id, ingredient in changes:
+        _set_edit_ingredient(at, recipe_id, row_id, ingredient)
+    if case in ("steps-empty", "multiple-errors"):
+        at.text_area(key=f"edit_steps_{recipe_id}").input("  \n  ")
+    _submit_recipe_edit(at)
+    assert [element.value for element in at.error] == [expected_error]
+    assert at.session_state["editing_recipe_id"] == recipe_id
+    assert f"edit_steps_{recipe_id}" in [widget.key for widget in at.text_area]
+    for row_id, ingredient in changes:
+        _assert_edit_ingredient(at, recipe_id, row_id, ingredient)
+    assert _read_page_recipes() == edit_page_recipes
+
+
+def test_edit_empty_ingredient_row_is_skipped(edit_page_recipes):
+    """清空一整行后保存，只移除该食材，剩余食材重新编辑时正确预填。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    _set_edit_ingredient(at, recipe_id, 0, {"name": " ", "amount": " ", "unit": " "})
+    _submit_recipe_edit(at)
+    expected_target = {**target, "ingredients": [target["ingredients"][1]]}
+    assert _read_page_recipes() == [edit_page_recipes[0], expected_target]
+    assert at.session_state["editing_recipe_id"] is None
+    _open_recipe_editor(at, recipe_id)
+    _assert_edit_ingredient(at, recipe_id, 0, target["ingredients"][1])
+    assert f"edit_ingredient_name_{recipe_id}_1" not in [
+        widget.key for widget in at.text_input
+    ]
+
+
+def test_edit_remove_all_rows_then_add_can_recover(edit_page_recipes):
+    """删完所有行时拒绝保存；仍能增加新行，填好后正常保存。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    for row_id in (0, 1):
+        at.button(key=f"delete_edit_ingredient_{recipe_id}_{row_id}").click().run()
+        assert not at.exception
+    _submit_recipe_edit(at)
+    assert [element.value for element in at.error] == ["至少要有一个食材！"]
+    assert at.session_state["editing_recipe_id"] == recipe_id
+    assert _read_page_recipes() == edit_page_recipes
+
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    assert at.session_state["edit_ingredient_row_ids"] == [2]
+    _assert_edit_ingredient(
+        at, recipe_id, 2, {"name": "", "amount": "", "unit": ""}
+    )
+    ingredient = {"name": "豆腐", "amount": "200", "unit": "克"}
+    _set_edit_ingredient(at, recipe_id, 2, ingredient)
+    _submit_recipe_edit(at)
+    expected_target = {**target, "ingredients": [ingredient]}
+    assert _read_page_recipes() == [edit_page_recipes[0], expected_target]
+    assert at.session_state["editing_recipe_id"] is None
+    _open_recipe_editor(at, recipe_id)
+    _assert_edit_ingredient(at, recipe_id, 0, ingredient)

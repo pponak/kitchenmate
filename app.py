@@ -1,3 +1,9 @@
+# 页面负责输入和校验，db_storage.py 的函数负责执行 SQL 和提交
+##########################################
+##########################################
+##########################################
+
+
 import streamlit as st
 from db_storage import (
     connect_db,
@@ -8,7 +14,8 @@ from db_storage import (
     get_recipe_by_id,
     delete_recipe,
     update_recipe_name,
-    update_recipe_favorite
+    update_recipe_favorite,
+    update_recipe_content
     )
 
 # 标题
@@ -21,21 +28,39 @@ create_recipes_table(connection)
 # 初始化session_state(相当于记事本，跨会话状态保存)中的食材行ID
 ## ingredient_row_ids:当前要显示哪些行
 ## next_ingredient_row_id:下一个要添加的行的ID，初始为1
+## editing_recipe_id:当前正在编辑的菜谱ID，初始为None
 if "ingredient_row_ids" not in st.session_state:
     st.session_state.ingredient_row_ids = [0]
 if "next_ingredient_row_id" not in st.session_state:
     st.session_state.next_ingredient_row_id = 1
-    
+if "editing_recipe_id" not in st.session_state:
+    st.session_state.editing_recipe_id = None
+
+
 # 增加食材行
 def add_ingredient_row():
     st.session_state.ingredient_row_ids.append(
         st.session_state.next_ingredient_row_id
     )
     st.session_state.next_ingredient_row_id += 1
-    
+
+
+# 修改时增加食材行
+def add_edit_ingredient_row():
+    st.session_state.edit_ingredient_row_ids.append(
+        st.session_state.next_edit_ingredient_row_id
+    )
+    st.session_state.next_edit_ingredient_row_id += 1
+
 # 删除食材行
 def remove_ingredient_row(row_id):
     st.session_state.ingredient_row_ids.remove(row_id)
+
+
+# 修改时删除食材行
+def remove_edit_ingredient_row(row_id):
+    st.session_state.edit_ingredient_row_ids.remove(row_id)
+
 
 # 添加菜谱表单
 with st.form("添加菜谱", enter_to_submit=False):
@@ -222,5 +247,105 @@ else:
             st.write("步骤：")
             for index, step in enumerate(recipe['steps'], start=1):
                 st.write(f"步骤{index}：{step}")
-
+            ### 添加编辑按钮
+            edit_clicked = st.button("编辑菜谱", key=f"edit_{recipe['id']}")
+            #### 点击按钮：记录编辑状态
+            if edit_clicked:
+                ##### 在编辑时时，可以增删输入行
+                ##### session_state记录当前显示行，下一条新行使用的id，并初始化
+                ##### 判断避免重复点击同一份菜谱的按钮造成重置
+                ##### 且在点击新的菜谱编辑按钮时，重新初始化row_id
+                if st.session_state.editing_recipe_id != recipe["id"]:
+                    st.session_state.edit_ingredient_row_ids = list(range(len(recipe["ingredients"])))
+                    st.session_state.next_edit_ingredient_row_id = len(recipe["ingredients"])
+                st.session_state.editing_recipe_id = recipe["id"]
+            #### 控制显示：读取编辑状态
+            if st.session_state.editing_recipe_id == recipe["id"]:
+                with st.form(f"edit_recipe_{recipe['id']}", enter_to_submit=False):
+                    ##### 编辑食材
+                    edited_ingredient_inputs = []
+                    ###### 按行id显示食材输入框
+                    for row_id in st.session_state.edit_ingredient_row_ids:
+                        ####### 如果行id小于食材数量，显示食材输入框，否则显示空输入框
+                        if row_id < len(recipe["ingredients"]):
+                            ingredient = recipe["ingredients"][row_id]
+                        else:
+                            ingredient = {
+                                "name": "",
+                                "amount": "",
+                                "unit": ""
+                                }
+                        ###### 显示食材输入框
+                        edited_name = st.text_input(
+                            "食材名称",
+                            value=ingredient["name"],
+                            key=f"edit_ingredient_name_{recipe['id']}_{row_id}"
+                        ).strip()
+                        edited_amount = st.text_input(
+                            "食材数量",
+                            value=ingredient["amount"],
+                            key=f"edit_ingredient_amount_{recipe['id']}_{row_id}"
+                        ).strip()
+                        edited_unit = st.text_input(
+                            "食材单位",
+                            value=ingredient["unit"],
+                            key=f"edit_ingredient_unit_{recipe['id']}_{row_id}"
+                        ).strip()
+                        edited_ingredient_inputs.append({
+                            "name": edited_name,
+                            "amount": edited_amount,
+                            "unit": edited_unit,
+                        })
+                        ###### 删除食材行按钮
+                        st.form_submit_button(
+                            "删除食材",
+                            key=f"delete_edit_ingredient_{recipe['id']}_{row_id}",
+                            on_click=remove_edit_ingredient_row,
+                            args=(row_id,),
+                        )
+                    ###### 增加食材行按钮
+                    st.form_submit_button(
+                        "添加食材",
+                        key=f"add_edit_ingredient_{recipe['id']}",
+                        on_click=add_edit_ingredient_row,
+                    )
+                    ##### 编辑步骤
+                    original_steps_text = "\n".join(recipe["steps"])
+                    edited_steps_text = st.text_area("编辑步骤（每行一个步骤）", value=original_steps_text, key=f"edit_steps_{recipe['id']}")
+                    save_clicked = st.form_submit_button("保存")
+                #### 点击保存-》整理输入
+                if save_clicked:
+                    edited_ingredients = []
+                    edited_missing_name = False
+                    ##### 整理食材
+                    for ingredient in edited_ingredient_inputs:
+                        if ingredient["name"]:
+                            edited_ingredients.append(ingredient)
+                        elif ingredient["amount"] or ingredient["unit"]:
+                            edited_missing_name = True
+                    ##### 整理步骤
+                    edited_steps = []
+                    for step in edited_steps_text.splitlines():
+                        step = step.strip()
+                        if step:
+                            edited_steps.append(step)
+                    ##### 保存
+                    if edited_missing_name:
+                        st.error("请补全食材名称！")
+                    elif not edited_ingredients:
+                        st.error("至少要有一个食材！")
+                    elif not edited_steps:
+                        st.error("步骤不能为空！")
+                    else:
+                        update_recipe_content(
+                            connection,
+                            recipe["id"],
+                            edited_ingredients,
+                            edited_steps
+                        )
+                        ###### 退出编辑状态，关闭连接，重新运行脚本显示新内容
+                        st.session_state.editing_recipe_id = None
+                        connection.close()
+                        st.rerun()
+                            
 connection.close()

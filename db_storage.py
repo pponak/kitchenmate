@@ -196,3 +196,19 @@ def update_recipe_favorite(connection, recipe_id, favorite):
     )
     
     connection.commit()
+    
+# 更新菜谱内容
+def update_recipe_content(connection, recipe_id, ingredients, steps):
+    ingredients_text = json.dumps(ingredients, ensure_ascii=False)
+    steps_text = json.dumps(steps, ensure_ascii=False)
+    
+    cursor = connection.cursor()
+    cursor.execute(
+    """
+    UPDATE recipes
+    SET ingredients = ?, steps = ?
+    where id = ?
+    """,
+    (ingredients_text, steps_text, recipe_id)
+    )
+    connection.commit()
