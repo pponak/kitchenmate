@@ -27,7 +27,19 @@ def create_recipes_table(connection):
     )
     
     connection.commit()
-    
+
+
+def row_to_recipe(row):
+    recipe = {
+        "id": row[0],
+        "name": row[1],
+        "ingredients": json.loads(row[2]),
+        "steps": json.loads(row[3]),
+        "category": row[4],
+        "favorite": row[5]
+    }
+    return recipe
+
 # 添加菜谱
 def add_recipe(connection, recipe):
     ## 将食材和步骤由python列表转换为JSON字符串
@@ -76,14 +88,7 @@ def get_all_recipes(connection):
     recipes = []
     
     for row in rows:
-        recipe = {
-            "id": row[0],
-            "name": row[1],
-            "ingredients": json.loads(row[2]),
-            "steps": json.loads(row[3]),
-            "category": row[4],
-            "favorite": row[5]
-        }
+        recipe = row_to_recipe(row)
         recipes.append(recipe)
         
     return recipes
@@ -108,14 +113,7 @@ def get_recipe_by_id(connection, recipe_id):
     if row is None:
         return None
     
-    recipe = {
-        "id": row[0],
-        "name": row[1],
-        "ingredients": json.loads(row[2]),
-        "steps": json.loads(row[3]),
-        "category": row[4],
-        "favorite": row[5]
-    }
+    recipe = row_to_recipe(row)
     
     return recipe
 
@@ -168,15 +166,7 @@ def search_recipes_by_name(connection, keyword):
     # 遍历rows，把每个row转换为菜谱字典，再返回菜谱列表
     recipes = []
     for row in rows:
-        recipe = {
-            "id": row[0],
-            "name": row[1],
-            "ingredients": json.loads(row[2]),
-            "steps": json.loads(row[3]),
-            "category": row[4],
-            "favorite": row[5]
-        }
-        
+        recipe = row_to_recipe(row)
         recipes.append(recipe)
         
     return recipes
@@ -198,7 +188,7 @@ def update_recipe_favorite(connection, recipe_id, favorite):
     connection.commit()
     
 # 更新菜谱内容
-def update_recipe_content(connection, recipe_id, ingredients, steps):
+def update_recipe_content(connection, category, recipe_id, ingredients, steps):
     ingredients_text = json.dumps(ingredients, ensure_ascii=False)
     steps_text = json.dumps(steps, ensure_ascii=False)
     
@@ -206,9 +196,9 @@ def update_recipe_content(connection, recipe_id, ingredients, steps):
     cursor.execute(
     """
     UPDATE recipes
-    SET ingredients = ?, steps = ?
+    SET category = ?, ingredients = ?, steps = ?
     where id = ?
     """,
-    (ingredients_text, steps_text, recipe_id)
+    (category, ingredients_text, steps_text, recipe_id)
     )
     connection.commit()

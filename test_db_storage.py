@@ -167,7 +167,7 @@ def test_missing_id_does_not_change_existing_recipes(db_path):
         missing_id = recipe_id + 1
         assert get_recipe_by_id(connection, missing_id) is None
         update_recipe_name(connection, missing_id, "不存在的菜谱")
-        update_recipe_content(connection, missing_id, [], [])
+        update_recipe_content(connection, "其他", missing_id, [], [])
         update_recipe_favorite(connection, missing_id, 1)
         delete_recipe(connection, missing_id)
 
@@ -246,12 +246,47 @@ def test_update_recipe_content_is_persistent(db_path, new_ingredients, new_steps
         other_id = add_recipe(connection, other_recipe)
         target_id = add_recipe(connection, target_recipe)
         update_recipe_favorite(connection, target_id, 1)
-        update_recipe_content(connection, target_id, new_ingredients, new_steps)
+        update_recipe_content(
+            connection,
+            target_recipe["category"],
+            target_id,
+            new_ingredients,
+            new_steps,
+        )
 
     expected = expected_recipe(
         target_id,
         {**target_recipe, "ingredients": new_ingredients, "steps": new_steps},
         favorite=1,
+    )
+    with closing(sqlite3.connect(db_path)) as connection:
+        assert get_recipe_by_id(connection, target_id) == expected
+        assert get_all_recipes(connection) == [
+            expected_recipe(other_id, other_recipe),
+            expected,
+        ]
+        assert search_recipes_by_name(connection, "鸡蛋") == [expected]
+
+
+@pytest.mark.parametrize("new_category", ["主菜", "其他"])
+def test_update_recipe_category_is_persistent(db_path, new_category):
+    """只改分类后重连，三个查询接口返回新分类，其他数据完整保留。"""
+    other_recipe = make_recipe("番茄汤")
+    target_recipe = make_recipe()
+    with closing(sqlite3.connect(db_path)) as connection:
+        other_id = add_recipe(connection, other_recipe)
+        target_id = add_recipe(connection, target_recipe)
+        update_recipe_favorite(connection, target_id, 1)
+        update_recipe_content(
+            connection,
+            new_category,
+            target_id,
+            target_recipe["ingredients"],
+            target_recipe["steps"],
+        )
+
+    expected = expected_recipe(
+        target_id, {**target_recipe, "category": new_category}, favorite=1
     )
     with closing(sqlite3.connect(db_path)) as connection:
         assert get_recipe_by_id(connection, target_id) == expected

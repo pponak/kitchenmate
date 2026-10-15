@@ -18,6 +18,11 @@ from db_storage import (
     update_recipe_content
     )
 
+
+# 菜谱分类
+CATEGORY_OPTIONS = [
+    "主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"
+]
 # 标题
 st.title("欢迎来到菜谱应用")
 
@@ -61,14 +66,35 @@ def remove_ingredient_row(row_id):
 def remove_edit_ingredient_row(row_id):
     st.session_state.edit_ingredient_row_ids.remove(row_id)
 
+# 整理食材和步骤输入
+def prepare_recipe_content(ingredient_inputs, steps_text):
+    ingredients = []
+    missing_name = False
+    ### 判断食材名称/食材数量/单位是否为空，不为空添加进列表
+    ### 三项为空跳过，只有名称为空提示用户
+    for ingredient in ingredient_inputs:
+        if ingredient["name"]:
+            ingredients.append(ingredient)
+        elif ingredient["amount"] or ingredient["unit"]:
+            missing_name = True
+    ### 多行步骤，按行分割
+    steps = []
+    for line in steps_text.splitlines():
+        cleaned_line = line.strip()
+        if cleaned_line:
+            steps.append(cleaned_line)
+    
+    return ingredients, steps, missing_name
+
+
 
 # 添加菜谱表单
 with st.form("添加菜谱", enter_to_submit=False):
     recipe_name_text = st.text_input("菜谱名称")
     ## 分类
     category = st.selectbox("菜谱分类", 
-                            ["主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"], 
-                            index=6)
+                            CATEGORY_OPTIONS, 
+                            index=CATEGORY_OPTIONS.index("其他"))
     ## key: 1.区分同时显示的输入框 2.增行或删除行后认出原来的输入框
     ## 什么时候用key：循环生成或会增删重排的组件；单个/固定/易区分的不用
     ingredient_inputs = []
@@ -94,21 +120,9 @@ with st.form("添加菜谱", enter_to_submit=False):
 ## 如果提交表单，重新运行脚本，submitted的值会变为True，进行添加菜谱操作
 if submitted:
     recipe_name = recipe_name_text.strip()
-    ingredients = []
-    missing_name = False
-    ### 判断食材名称/食材数量/单位是否为空，不为空添加进列表
-    ### 三项为空跳过，只有名称为空提示用户
-    for ingredient in ingredient_inputs:
-        if ingredient["name"]:
-            ingredients.append(ingredient)
-        elif ingredient["amount"] or ingredient["unit"]:
-            missing_name = True
-    ### 多行步骤，按行分割
-    steps = []
-    for line in steps_text.splitlines():
-        cleaned_line = line.strip()
-        if cleaned_line:
-            steps.append(cleaned_line)
+    ingredients, steps, missing_name = prepare_recipe_content(
+        ingredient_inputs, steps_text
+    )
     ### 判断输入是否为空，如果为空，提示用户；校验通过，添加菜谱
     if not recipe_name:
         st.write("菜谱名称不能为空！")
@@ -180,7 +194,7 @@ if update_clicked:
 # 选择分类，筛选菜谱
 selected_category = st.selectbox(
             "筛选菜谱分类", 
-            ["全部", "主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"],
+            ["全部"] + CATEGORY_OPTIONS,
             index=0)
 
 # 按名称搜索菜谱
@@ -239,14 +253,14 @@ else:
             connection.close()
             st.rerun()
         
-        with st.expander(f"菜谱ID：{recipe['id']}，菜谱名称： {recipe['name']}"):
-            st.write(f"菜谱分类：{recipe['category']}")
-            st.write("食材：")
+        with st.expander(f"**菜谱ID：{recipe['id']}，菜谱名称： {recipe['name']}**"):
+            st.write(f"**菜谱分类：{recipe['category']}**")
+            st.subheader("食材：")
             for ingredient in recipe['ingredients']:
                 st.write(f"{ingredient['name']}：{ingredient['amount']} {ingredient['unit']}")
-            st.write("步骤：")
+            st.subheader("步骤：")
             for index, step in enumerate(recipe['steps'], start=1):
-                st.write(f"步骤{index}：{step}")
+                st.write(f"**步骤{index}**：{step}")
             ### 添加编辑按钮
             edit_clicked = st.button("编辑菜谱", key=f"edit_{recipe['id']}")
             #### 点击按钮：记录编辑状态
@@ -262,6 +276,13 @@ else:
             #### 控制显示：读取编辑状态
             if st.session_state.editing_recipe_id == recipe["id"]:
                 with st.form(f"edit_recipe_{recipe['id']}", enter_to_submit=False):
+                    ##### 编辑分类
+                    edited_category = st.selectbox(
+                        "编辑分类",
+                        CATEGORY_OPTIONS,
+                        index=CATEGORY_OPTIONS.index(recipe["category"]),
+                        key=f"edit_category_{recipe["id"]}",
+                    )
                     ##### 编辑食材
                     edited_ingredient_inputs = []
                     ###### 按行id显示食材输入框
@@ -313,22 +334,18 @@ else:
                     original_steps_text = "\n".join(recipe["steps"])
                     edited_steps_text = st.text_area("编辑步骤（每行一个步骤）", value=original_steps_text, key=f"edit_steps_{recipe['id']}")
                     save_clicked = st.form_submit_button("保存")
-                #### 点击保存-》整理输入
+                    cancel_clicked = st.form_submit_button("取消编辑")
+                #### 点击取消编辑
+                if cancel_clicked:
+                    st.session_state.editing_recipe_id = None
+                    connection.close()
+                    st.rerun()
+                #### 点击保存-》整理输入-》保存
                 if save_clicked:
-                    edited_ingredients = []
-                    edited_missing_name = False
-                    ##### 整理食材
-                    for ingredient in edited_ingredient_inputs:
-                        if ingredient["name"]:
-                            edited_ingredients.append(ingredient)
-                        elif ingredient["amount"] or ingredient["unit"]:
-                            edited_missing_name = True
-                    ##### 整理步骤
-                    edited_steps = []
-                    for step in edited_steps_text.splitlines():
-                        step = step.strip()
-                        if step:
-                            edited_steps.append(step)
+                    ##### 整理输入
+                    edited_ingredients, edited_steps, edited_missing_name = prepare_recipe_content(
+                        edited_ingredient_inputs, edited_steps_text
+                    )
                     ##### 保存
                     if edited_missing_name:
                         st.error("请补全食材名称！")
@@ -339,6 +356,7 @@ else:
                     else:
                         update_recipe_content(
                             connection,
+                            edited_category,
                             recipe["id"],
                             edited_ingredients,
                             edited_steps

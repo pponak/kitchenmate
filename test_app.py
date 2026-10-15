@@ -216,7 +216,7 @@ def test_category_and_name_filters_work_together(tmp_path, monkeypatch):
     messages = []
     for element in at.markdown:
         messages.append(element.value)
-    assert "菜谱分类：主菜" in messages
+    assert "**菜谱分类：主菜**" in messages
     
     ## 筛选分类改为"全部"，搜索词不变
     at.selectbox[1].select("全部")
@@ -564,14 +564,20 @@ def _submit_recipe_edit(at):
     assert not at.exception
 
 
-def test_edit_prefills_saved_recipe(edit_page_recipes):
-    """编辑框取当前菜谱的原食材和步骤，进入编辑本身不写入数据库。"""
-    target = edit_page_recipes[1]
+@pytest.mark.parametrize("target_index", [0, 1], ids=["soup", "main-dish"])
+def test_edit_prefills_saved_recipe(edit_page_recipes, target_index):
+    """编辑框取当前菜谱的原分类、食材和步骤，进入编辑本身不写库。"""
+    target = edit_page_recipes[target_index]
     at = AppTest.from_file("app.py").run()
     assert not at.exception
     assert f"edit_steps_{target['id']}" not in [widget.key for widget in at.text_area]
 
     _open_recipe_editor(at, target["id"])
+    category = at.selectbox(key=f"edit_category_{target['id']}")
+    assert category.value == target["category"]
+    assert category.options == [
+        "主菜", "配菜", "汤羹", "主食", "甜点", "饮品", "其他"
+    ]
     for row_id, ingredient in enumerate(target["ingredients"]):
         _assert_edit_ingredient(at, target["id"], row_id, ingredient)
     assert at.text_area(key=f"edit_steps_{target['id']}").value == "\n".join(
@@ -581,15 +587,17 @@ def test_edit_prefills_saved_recipe(edit_page_recipes):
 
 
 def test_edit_add_ingredient_row_keeps_input(edit_page_recipes):
-    """增行保留原输入和步骤；再次增行或点击编辑不重置草稿。"""
+    """增行保留分类、食材和步骤；再次增行或点击编辑不重置草稿。"""
     target = edit_page_recipes[1]
     recipe_id = target["id"]
     at = AppTest.from_file("app.py").run()
     _open_recipe_editor(at, recipe_id)
+    at.selectbox(key=f"edit_category_{recipe_id}").select("汤羹")
     at.text_input(key=f"edit_ingredient_amount_{recipe_id}_0").input("3")
     at.text_area(key=f"edit_steps_{recipe_id}").input("打散鸡蛋\n炒熟后加盐")
     at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
     assert not at.exception
+    assert at.selectbox(key=f"edit_category_{recipe_id}").value == "汤羹"
     _assert_edit_ingredient(
         at, recipe_id, 0, {"name": "鸡蛋", "amount": "3", "unit": "个"}
     )
@@ -608,6 +616,7 @@ def test_edit_add_ingredient_row_keeps_input(edit_page_recipes):
         at, recipe_id, 3, {"name": "", "amount": "", "unit": ""}
     )
     _open_recipe_editor(at, recipe_id)
+    assert at.selectbox(key=f"edit_category_{recipe_id}").value == "汤羹"
     _assert_edit_ingredient(at, recipe_id, 2, new_ingredient)
     assert at.session_state["edit_ingredient_row_ids"] == [0, 1, 2, 3]
     assert at.session_state["ingredient_row_ids"] == [0]
@@ -704,7 +713,7 @@ def test_edit_save_content_is_persistent(edit_page_recipes):
     ].value == "鸡蛋"
     messages = _page_messages(at)
     assert "鸡蛋：3 个" in messages
-    assert "步骤2：将鸡蛋与番茄炒熟" in messages
+    assert "**步骤2**：将鸡蛋与番茄炒熟" in messages
 
     at.run()
     assert not at.exception
@@ -731,10 +740,11 @@ def test_edit_save_content_is_persistent(edit_page_recipes):
     ids=["missing-name-amount", "missing-name-unit", "no-ingredients", "no-steps", "error-priority"],
 )
 def test_edit_invalid_input_is_rejected(edit_page_recipes, case, expected_error):
-    """错误输入不写库，准确提示，并保留编辑状态及当前输入。"""
+    """错误输入阻止包括分类在内的整份保存，保留编辑状态和草稿。"""
     recipe_id = edit_page_recipes[1]["id"]
     at = AppTest.from_file("app.py").run()
     _open_recipe_editor(at, recipe_id)
+    at.selectbox(key=f"edit_category_{recipe_id}").select("汤羹")
     if case == "amount-without-name":
         changes = [(0, {"name": "   ", "amount": "2", "unit": ""})]
     elif case == "unit-without-name":
@@ -755,6 +765,7 @@ def test_edit_invalid_input_is_rejected(edit_page_recipes, case, expected_error)
     _submit_recipe_edit(at)
     assert [element.value for element in at.error] == [expected_error]
     assert at.session_state["editing_recipe_id"] == recipe_id
+    assert at.selectbox(key=f"edit_category_{recipe_id}").value == "汤羹"
     assert f"edit_steps_{recipe_id}" in [widget.key for widget in at.text_area]
     for row_id, ingredient in changes:
         _assert_edit_ingredient(at, recipe_id, row_id, ingredient)
@@ -807,3 +818,135 @@ def test_edit_remove_all_rows_then_add_can_recover(edit_page_recipes):
     assert at.session_state["editing_recipe_id"] is None
     _open_recipe_editor(at, recipe_id)
     _assert_edit_ingredient(at, recipe_id, 0, ingredient)
+
+
+@pytest.mark.parametrize("invalid_draft", [False, True], ids=["valid-draft", "invalid-draft"])
+def test_cancel_edit_discards_draft(edit_page_recipes, invalid_draft):
+    """取消有效或无效草稿都不写库，保留筛选，再次编辑恢复已保存内容。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    at.selectbox[1].select("主菜")
+    search = [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][0]
+    search.input("鸡蛋")
+    at.checkbox[0].check().run()
+    _open_recipe_editor(at, recipe_id)
+    at.selectbox(key=f"edit_category_{recipe_id}").select("汤羹")
+    at.text_input(key=f"edit_ingredient_amount_{recipe_id}_0").input("99")
+    at.text_area(key=f"edit_steps_{recipe_id}").input("未保存的步骤")
+    at.button(key=f"add_edit_ingredient_{recipe_id}").click().run()
+    assert not at.exception
+    _set_edit_ingredient(at, recipe_id, 2, {"name": "盐", "amount": "1", "unit": "克"})
+    at.button(key=f"delete_edit_ingredient_{recipe_id}_1").click().run()
+    assert not at.exception
+    if invalid_draft:
+        for row_id in (0, 2):
+            _set_edit_ingredient(
+                at, recipe_id, row_id, {"name": "", "amount": "", "unit": ""}
+            )
+        at.text_area(key=f"edit_steps_{recipe_id}").input("  \n  ")
+    assert _read_page_recipes() == edit_page_recipes
+
+    cancel_buttons = [button for button in at.button if button.label == "取消编辑"]
+    assert len(cancel_buttons) == 1
+    cancel_buttons[0].click().run()
+    assert not at.exception
+    assert not at.error
+    assert at.session_state["editing_recipe_id"] is None
+    assert f"edit_steps_{recipe_id}" not in [widget.key for widget in at.text_area]
+    assert f"edit_category_{recipe_id}" not in [widget.key for widget in at.selectbox]
+    assert _read_page_recipes() == edit_page_recipes
+    _assert_recipe_list(at, [target])
+    assert at.selectbox[1].value == "主菜"
+    assert at.checkbox[0].value is True
+    assert [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][
+        0
+    ].value == "鸡蛋"
+
+    _open_recipe_editor(at, recipe_id)
+    assert at.selectbox(key=f"edit_category_{recipe_id}").value == target["category"]
+    assert at.session_state["edit_ingredient_row_ids"] == [0, 1]
+    for row_id, ingredient in enumerate(target["ingredients"]):
+        _assert_edit_ingredient(at, recipe_id, row_id, ingredient)
+    assert f"edit_ingredient_name_{recipe_id}_2" not in [
+        widget.key for widget in at.text_input
+    ]
+    assert at.text_area(key=f"edit_steps_{recipe_id}").value == "\n".join(target["steps"])
+    assert _read_page_recipes() == edit_page_recipes
+
+
+@pytest.mark.parametrize(
+    "target_index, new_category",
+    [(0, "主菜"), (1, "汤羹"), (1, "其他")],
+    ids=["soup-to-main", "main-to-soup", "main-to-other"],
+)
+def test_edit_category_is_persistent(edit_page_recipes, target_index, new_category):
+    """只改分类后刷新详情并退出，重开仍保留，其他字段和菜谱不变。"""
+    target = edit_page_recipes[target_index]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    _open_recipe_editor(at, recipe_id)
+    at.selectbox(key=f"edit_category_{recipe_id}").select(new_category)
+    _submit_recipe_edit(at)
+    expected_target = {**target, "category": new_category}
+    expected = list(edit_page_recipes)
+    expected[target_index] = expected_target
+    assert _read_page_recipes() == expected
+    assert at.session_state["editing_recipe_id"] is None
+    assert f"edit_category_{recipe_id}" not in [widget.key for widget in at.selectbox]
+    _assert_recipe_list(at, expected)
+    assert f"**菜谱分类：{new_category}**" in _page_messages(at)
+
+    at.run()
+    assert not at.exception
+    assert _read_page_recipes() == expected
+    reopened = AppTest.from_file("app.py").run()
+    _assert_recipe_list(reopened, expected)
+    _open_recipe_editor(reopened, recipe_id)
+    assert reopened.selectbox(key=f"edit_category_{recipe_id}").value == new_category
+    for row_id, ingredient in enumerate(target["ingredients"]):
+        _assert_edit_ingredient(reopened, recipe_id, row_id, ingredient)
+    assert reopened.text_area(key=f"edit_steps_{recipe_id}").value == "\n".join(
+        target["steps"]
+    )
+
+
+def test_edit_category_and_content_preserve_filters(edit_page_recipes):
+    """同时改分类和内容后按新条件显示，保留名称及收藏筛选和其他记录。"""
+    target = edit_page_recipes[1]
+    recipe_id = target["id"]
+    at = AppTest.from_file("app.py").run()
+    at.selectbox[1].select("主菜")
+    search = [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][0]
+    search.input("鸡蛋")
+    at.checkbox[0].check().run()
+    _open_recipe_editor(at, recipe_id)
+    at.selectbox(key=f"edit_category_{recipe_id}").select("汤羹")
+    ingredient = {"name": "鸡蛋", "amount": "3", "unit": "个"}
+    _set_edit_ingredient(at, recipe_id, 0, ingredient)
+    at.text_area(key=f"edit_steps_{recipe_id}").input("打散鸡蛋\n炒熟后加盐")
+    _submit_recipe_edit(at)
+    expected_target = {
+        **target,
+        "category": "汤羹",
+        "ingredients": [ingredient, target["ingredients"][1]],
+        "steps": ["打散鸡蛋", "炒熟后加盐"],
+    }
+    expected = [edit_page_recipes[0], expected_target]
+    assert _read_page_recipes() == expected
+    assert at.session_state["editing_recipe_id"] is None
+    _assert_recipe_list(at, [])
+    assert "没有符合当前条件的收藏菜谱" in _page_messages(at)
+    assert at.selectbox[1].value == "主菜"
+    assert at.checkbox[0].value is True
+    assert [widget for widget in at.text_input if widget.label == "搜索菜谱名称"][
+        0
+    ].value == "鸡蛋"
+
+    # 只切换分类，名称和收藏仍同时约束结果，目标按新分类重新出现。
+    at.selectbox[1].select("汤羹").run()
+    _assert_recipe_list(at, [expected_target])
+    assert "**菜谱分类：汤羹**" in _page_messages(at)
+    assert "鸡蛋：3 个" in _page_messages(at)
+    assert "**步骤2**：炒熟后加盐" in _page_messages(at)
+    assert _read_page_recipes() == expected
