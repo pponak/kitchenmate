@@ -1,11 +1,15 @@
 import json
 import sqlite3
+import os
 from pathlib import Path
 
-DB_FILE = Path(__file__).parent / "kitchenmate.db"
+DATA_DIR = Path(os.environ["LOCALAPPDATA"]) / "KitchenMate"
+
+DB_FILE = DATA_DIR / "kitchenmate.db"
 
 # 连接数据库，返回一个连接对象
 def connect_db():
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_FILE)
     return connection
 

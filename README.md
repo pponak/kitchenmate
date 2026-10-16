@@ -1,6 +1,6 @@
 # KitchenMate
 
-KitchenMate 是一个个人菜谱管理练习项目。当前主版本使用 SQLite 保存菜谱，并通过 Streamlit 提供网页界面；早期的 JSON 命令行版本保留作学习记录。
+KitchenMate 是一个个人菜谱管理练习项目。当前主版本使用 SQLite 保存菜谱，通过 Streamlit 提供页面，并可用 pywebview 在独立 Windows 窗口中显示。已生成 PyInstaller 目录版成品并完成本机隔离验收；早期的 JSON 命令行版本保留作学习记录。
 
 ## 当前功能
 
@@ -33,17 +33,47 @@ KitchenMate 是一个个人菜谱管理练习项目。当前主版本使用 SQLi
 
 ## 运行方式
 
-已在 Windows、Python 3.14.3、Streamlit 1.64.0 下运行。进入 `kitchenmate` 项目目录后，在 cmd 中执行：
+### 使用打包后的桌面版
+
+打开 `dist\KitchenMate` 文件夹，双击 `KitchenMate.exe`。移动或分享时必须复制整个 `KitchenMate` 文件夹，包括 `_internal`，不能只复制 exe。当前保留控制台窗口，便于查看启动错误；正常退出请关闭 KitchenMate 菜谱窗口。
+
+成品自带 Python 运行时和应用依赖，使用者无需自行运行 pip。窗口依赖 Windows 的 Microsoft Edge WebView2 Runtime；本机已有该组件，尚未在缺少 Python 或 WebView2 的另一台电脑上验收。仓库目前保存源码及构建配置，没有发布可下载的成品附件；`dist/` 不通过 Git 同步。
+
+普通启动时，入口先检查本机 `8502` 端口，启动自己的页面服务，有限次检查就绪后才打开窗口；关闭窗口后停止并等待服务进程退出。若提示端口已占用，请先检查是否已有 KitchenMate 或其他服务在运行，不要直接结束不明进程。
+
+### 从源码运行
+
+本机已使用 Windows、Python 3.14.3、Streamlit 1.64.0、pywebview 6.2.1 运行。进入 `kitchenmate` 项目目录，在 PowerShell 或 cmd 中执行：
 
 ```cmd
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install streamlit==1.64.0
-.\.venv\Scripts\streamlit.exe run app.py
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe window_practice.py
 ```
 
-每台电脑只需创建一次自己的 `.venv`。已有可用的 `.venv` 时，直接运行最后一行；若环境中没有 pip，可先运行 `.\.venv\Scripts\python.exe -m ensurepip --upgrade`。启动后在终端给出的本地地址打开页面，按 `Ctrl+C` 停止。
+每台电脑建立自己的 `.venv`，不经 Git 同步。已有环境且依赖齐全时，直接运行最后一行；新增或更新依赖后重新执行安装命令。若环境中没有 pip，可先运行 `.\.venv\Scripts\python.exe -m ensurepip --upgrade`。当前数据目录依赖 Windows 的 `LOCALAPPDATA` 环境变量。
+
+只使用浏览器页面时，可以单独启动：
+
+```cmd
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.address=127.0.0.1 --server.port=8502 --server.headless=true --global.developmentMode=false
+```
+
+随后打开 `http://127.0.0.1:8502`，在该终端按 `Ctrl+C` 停止服务。浏览器方式和桌面方式不要同时占用同一个端口。`window_practice.py --server` 是启动器内部使用的服务分支，只启动服务，不打开窗口。
 
 以下使用 `.\.venv\Scripts\python.exe` 的命令直接指定项目虚拟环境中的 Python，无需先激活虚拟环境；执行时需位于项目目录。
+
+### 数据目录与旧数据
+
+页面、桌面版和 SQLite 命令行共用的数据文件现在位于：
+
+```text
+%LOCALAPPDATA%\KitchenMate\kitchenmate.db
+```
+
+例如当前用户通常对应 `C:\Users\用户名\AppData\Local\KitchenMate\kitchenmate.db`。首次连接时自动创建目录和数据库；程序文件与用户菜谱分开保存，移动或替换成品文件夹不需要移动数据库。关闭应用后可以单独备份该文件，数据库不会随代码在电脑之间同步。
+
+项目目录中原有的 `kitchenmate.db` 保留，不会自动迁移，也不会被当前入口读取。需要沿用旧菜谱时，先关闭所有使用该数据库的程序，分别备份旧库与用户目录中的库，再核对表结构与数据并决定迁移；不要直接覆盖已有用户库。当前尚无自动迁移工具。
 
 当前 `recipes` 表需要 `id`、`name`、`ingredients`、`steps`、`category`、`favorite` 六列。新数据库会按此结构创建；已有表不会被 `CREATE TABLE IF NOT EXISTS` 自动升级。换电脑或更新旧版本时，请先备份并检查本机表结构；缺列的旧表需要保留数据地新增 `category TEXT DEFAULT '其他'` 或 `favorite INTEGER DEFAULT 0` 后再运行，只增加实际缺少的列。项目尚未提供自动迁移，拉取 Git 代码也不会更新本机数据库，不要为升级直接删除旧数据。
 
@@ -58,7 +88,7 @@ python -m venv .venv
 在项目虚拟环境中安装 pytest 并运行页面与数据层测试：
 
 ```cmd
-.\.venv\Scripts\python.exe -m pip install pytest==9.1.1
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m pytest -q test_app.py test_db_storage.py
 ```
 
@@ -109,9 +139,31 @@ python -m venv .venv
 
 编辑测试用 `edit_page_recipes` fixture 准备两份独立菜谱，覆盖不同分类及收藏状态，主要编辑场景的目标不是第一份且已收藏；通过比较完整记录保护原 ID、名称、收藏状态、未修改字段及其他菜谱。
 
-每个执行用例都通过 pytest 的 `tmp_path` 创建独立的 SQLite 数据库；页面测试及数据层 fixture 用 `monkeypatch` 临时替换 `db_storage.DB_FILE`，测试结束后恢复。测试不会修改本机的 `kitchenmate.db`。2026-10-15 在三项重构完成后的最新整套结果为 `52 passed`（三十六个页面用例、十六个数据层用例），真实数据库校验值未变。当天本人也在独立临时数据库预览中确认食材/步骤编辑、取消草稿和分类保存/筛选的代表性操作符合预期；这不代表所有浏览器边界场景或独立开发能力均已验收。新环境安装、测试及页面启动验收仍保留待办。
+每个执行用例都通过 pytest 的 `tmp_path` 创建独立的 SQLite 数据库；页面测试及数据层 fixture 用 `monkeypatch` 临时替换 `db_storage.DB_FILE`，测试结束后恢复。测试不会修改真实用户数据库。2026-10-16 更改数据目录和启动器后，助手在隔离数据下重跑整套，结果为 `52 passed`（三十六个页面用例、十六个数据层用例）；项目原数据库校验值未变，真实用户目录没有创建测试数据库。2026-10-15 本人也曾在隔离预览中确认编辑、取消草稿和分类筛选的代表性操作。以上结果不代表所有边界场景或独立开发能力均已验收；干净开发环境安装、测试及启动验收仍待完成。
 
 分类保存、默认值和三个查询接口读回现已纳入永久数据层测试。添加表单的默认分类选项及选择分类后提交，曾做一次性 AppTest 验证，尚未专门加入永久页面断言。
+
+## 重新打包与成品验收
+
+开发电脑安装打包依赖后，用已保存的配置构建：
+
+```cmd
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe -m PyInstaller KitchenMate.spec
+```
+
+已验证的构建版本为 PyInstaller 6.22.3，输出位于 `dist\KitchenMate`。重新构建前先关闭正在使用的成品，并确认输出目录中没有自行放入的用户文件；若工具提示替换旧输出，核对路径后再继续。`build/` 和 `dist/` 是生成文件，不提交 Git。
+
+`KitchenMate.spec` 包含 `app.py`、Streamlit 静态资源和版本元数据，并显式收集 `db_storage` 与 `streamlit.runtime.scriptrunner.magic_funcs`。Streamlit 会在运行页面时动态插入后一个模块的导入，打包分析可能漏掉它；仅健康检查返回 200 不能证明页面能执行。后续打包应继续使用该配置，不能省略这些资源和隐式导入。
+
+2026-10-16 助手将整个成品复制到项目外，从空工作目录启动，并只给测试进程设置独立 `LOCALAPPDATA`、移除 `PYTHONPATH/PYTHONHOME`，实际操作 pywebview 窗口完成：
+
+- 页面正常显示，无缺失模块异常；新增、收藏、编辑保存正常；
+- 只读核对隔离数据库，内容与窗口操作一致；关闭全部应用进程后重新打开，菜谱、收藏和修改后的步骤仍保留；
+- 两次关闭窗口退出码均为 0，服务退出、8502 端口释放，日志没有 traceback；
+- 成品不包含真实数据库，项目原数据库未改动，真实用户目录未创建数据库。
+
+这是当前 Windows 电脑上的文件和数据隔离验收，不等同于无 Python 的独立电脑或虚拟机验收；同时启动竞争及全部界面边界场景尚未覆盖。
 
 ## 数据与项目文件
 
@@ -119,7 +171,7 @@ python -m venv .venv
 
 编辑状态由 `editing_recipe_id` 标识目标菜谱，编辑食材的行 ID 和下一个可用 ID 单独保存在 `st.session_state`。进入新的编辑目标时按原食材数量初始化；增删行回调更新状态后页面重跑，稳定组件 key 保留剩余输入。保存时先整理食材与步骤，再进行页面校验；通过后调用 `update_recipe_content(connection, category, recipe_id, ingredients, steps)`，将食材/步骤转成 JSON 文本，并在同一条按 ID 的 `UPDATE` 中写入分类、食材和步骤，`commit()` 后退出编辑、关闭连接和重新查询。取消编辑只退出并重跑，不调用更新函数。删除行不减少下一行 ID；再次进入编辑时按已保存列表重新初始化行编号。
 
-当前共用逻辑保持在原有两个生产模块中：
+页面与数据层的共用逻辑保持在以下两个模块中，启动器另负责窗口和服务的生命周期：
 
 - `app.py` 的 `CATEGORY_OPTIONS` 统一添加、筛选及编辑的分类选项；筛选额外拼接“全部”，添加默认值和编辑预填通过 `.index()` 查找；
 - `app.py` 的 `prepare_recipe_content(ingredient_inputs, steps_text)` 返回有效食材、有效步骤和名称缺失标记，添加/编辑共用整理规则；提示、校验及写入仍由各自的页面分支处理；食材输入框已先执行 `.strip()`，步骤在整理函数中逐行清理；
@@ -130,7 +182,12 @@ kitchenmate/
 ├── app.py          # 当前 Streamlit 页面
 ├── db_storage.py   # SQLite 连接、建表、CRUD、收藏、分类/内容更新及行转换
 ├── sqlite_main.py  # SQLite 命令行入口
-├── kitchenmate.db  # 本机数据，首次运行时创建，不经 Git 同步
+├── window_practice.py  # 桌面入口、服务分支、就绪检查与退出清理
+├── process_practice.py # 简单子进程学习示例，不是应用入口
+├── KitchenMate.spec    # PyInstaller 构建配置
+├── requirements.txt   # 运行与测试依赖
+├── requirements-build.txt # 构建工具版本及上述依赖
+├── kitchenmate.db  # 旧位置的本机库，保留但当前程序不读取
 ├── db_practice.py  # 早期 SQLite CRUD 练习
 ├── test_db_storage.py  # 十六个临时数据库用例，含分类及内容更新持久化
 ├── test_app.py     # 三十六个 AppTest 页面用例，含取消编辑、分类保存及筛选
@@ -138,16 +195,19 @@ kitchenmate/
 ├── storage.py      # 历史 JSON 读写
 ├── recipes.json    # 历史 JSON 示例数据
 ├── README.md
+├── AGENTS.md       # 仅本项目适用的学习与协作规则
 └── .gitignore
 ```
 
-代码通过 Git/GitHub 同步。`kitchenmate.db` 被 `.gitignore` 排除，因此两台电脑的 SQLite 菜谱数据各自独立。`recipes.json` 虽写在 `.gitignore` 中，但已被 Git 跟踪，仍会随代码仓库同步；当前主版本不读取它。
+代码通过 Git/GitHub 同步。项目中的 `*.db` 被 `.gitignore` 排除，当前用户库位于项目之外，因此两台电脑的 SQLite 菜谱数据各自独立。`recipes.json` 虽写在 `.gitignore` 中，但已被 Git 跟踪，仍会随代码仓库同步；当前主版本不读取它。
 
 ## 当前限制与下一步
 
 - 页面已支持编辑保存分类、食材和步骤，以及取消草稿；名称仍通过独立的按 ID 改名入口修改；
 - 页面删除没有二次确认；
-- 已有数据库尚无自动结构迁移；从新环境按 README 安装、运行测试及启动页面的验收仍待完成；
+- 已有数据库尚无自动结构迁移，也无项目旧库到用户目录的自动数据迁移；
+- 桌面版当前保留控制台，依赖 WebView2；无 Python 的另一台 Windows 电脑验收、干净开发环境按 README 安装/测试/启动验收仍待完成；
+- 启动器采用固定端口和启动前占用检查，尚未覆盖多个实例同时启动的竞争；失败信息当前输出到控制台；
 - 已有十六个 SQLite 数据层用例和三十六个页面用例，覆盖分类/内容编辑和持久化、取消草稿、动态食材行、校验、收藏交互及组合筛选。添加表单分类选择/默认选项、页面按 ID 删除/改名、切换编辑目标及其余边界场景尚未全部纳入自动化测试。
 
-本轮已完成编辑功能的代表性手动验收，以及分类选项、查询行转换和输入整理三项重复代码重构。下一步进入阶段交付准备，先核对 README 的安装、测试、启动/停止和数据隔离说明；原暂缓的新环境验收继续保留，待安排时使用独立环境及临时数据库，不重建当前可用 `.venv`。
+当前已完成桌面入口、数据目录分离、目录版打包、本机隔离验收和相应使用说明。下一步优先在另一台 Windows 电脑验证成品及数据保留，再继续阶段复盘与自主功能训练；如果暂时没有可用电脑，则保留验收待办。干净开发环境验收与无 Python 成品验收分别记录，不重建当前可用 `.venv`，也不把助手完成打包等同于本人已能独立交付。

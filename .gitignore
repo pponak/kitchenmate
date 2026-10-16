@@ -4,3 +4,5 @@ __pycache__/
 recipes.json
 *.db
 .pytest_cache/
+build/
+dist/
